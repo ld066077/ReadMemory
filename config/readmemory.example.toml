@@ -1,0 +1,9 @@
+log_level = "INFO"
+default_language = "en"
+review_horizon_days = 7
+allow_unanchored_notes = true
+markdown_filename_pattern = "{date}-reading-log.md"
+review_interval_new_days = 1
+review_interval_correct_days = 3
+review_interval_weekly_days = 7
+

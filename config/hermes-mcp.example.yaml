@@ -1,0 +1,20 @@
+mcp_servers:
+  readmemory:
+    command: "readmemory-mcp"
+    args:
+      - "--config"
+      - "/home/user/.config/readmemory/readmemory.toml"
+    tools:
+      include:
+        - import_book
+        - find_anchor
+        - log_progress
+        - add_vocabulary
+        - add_sentence
+        - add_thought
+        - get_due_reviews
+        - generate_daily_log
+        - search_notes
+      prompts: false
+      resources: false
+
