@@ -5,8 +5,8 @@ usage() {
   cat <<'EOF'
 Usage: uninstall-linux.sh [--purge]
 
-Removes the installed binaries and skill. Use --purge to also remove config
-and data directories.
+Removes the installed binaries, update command, and skill. Use --purge to also
+remove config and data directories.
 EOF
 }
 
@@ -96,6 +96,12 @@ require_home_child "config directory" "$CONFIG_DIR"
 require_home_child "data directory" "$DATA_DIR"
 require_home_child "skill directory" "$SKILL_DIR"
 
+cleanup_hermes_mcp() {
+  if command -v hermes >/dev/null 2>&1; then
+    printf 'y\n' | hermes mcp remove readmemory >/dev/null 2>&1 || true
+  fi
+}
+
 safe_rm_install_root() {
   case "$INSTALL_ROOT" in
     ""|"/"|"$HOME"|"$HOME/"|"$HOME/.local"|"$HOME/.local/")
@@ -140,12 +146,13 @@ assert_marked_dir() {
 }
 
 assert_marked_dir "$SKILL_DIR" ".readmemory-skill-dir" "readmemory-skill-dir-v1"
+cleanup_hermes_mcp
 if [ "$PURGE" -eq 1 ]; then
   assert_marked_dir "$CONFIG_DIR" ".readmemory-config-dir" "readmemory-config-dir-v1"
   assert_marked_dir "$DATA_DIR" ".readmemory-data-dir" "readmemory-data-dir-v1"
 fi
 
-rm -f "$BIN_DIR/readmemory" "$BIN_DIR/readmemory-mcp" "$BIN_DIR/readmemory-uninstall"
+rm -f "$BIN_DIR/readmemory" "$BIN_DIR/readmemory-mcp" "$BIN_DIR/readmemory-update" "$BIN_DIR/readmemory-uninstall"
 safe_rm_marked_dir "$SKILL_DIR" ".readmemory-skill-dir" "readmemory-skill-dir-v1"
 
 if [ "$PURGE" -eq 1 ]; then

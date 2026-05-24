@@ -22,7 +22,7 @@ Default user-local paths:
 
 - App releases: `~/.local/opt/readmemory/releases/`
 - Current app: `~/.local/opt/readmemory/current`
-- Commands: `~/.local/bin/readmemory`, `~/.local/bin/readmemory-mcp`
+- Commands: `~/.local/bin/readmemory`, `~/.local/bin/readmemory-mcp`, `~/.local/bin/readmemory-update`
 - Config: `~/.config/readmemory/readmemory.toml`
 - Data: `~/.local/share/readmemory/`
 - Database: `~/.local/share/readmemory/readmemory.sqlite`
@@ -61,13 +61,21 @@ The installed skill path is:
 
 ## Upgrade
 
-Run the installer again from the new repository version:
+Update to the latest GitHub Release:
+
+```bash
+readmemory-update
+```
+
+Or run the installer again from a checked-out repository version:
 
 ```bash
 ./scripts/install-linux.sh
 ```
 
 The installer creates a versioned release under `~/.local/opt/readmemory/releases/`, repoints `~/.local/opt/readmemory/current`, refreshes wrappers in `~/.local/bin`, and keeps existing config and data.
+
+See `UPDATE.md` for the GitHub update flow and release checklist.
 
 ## Uninstall
 
