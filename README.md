@@ -12,7 +12,20 @@ Requirements:
 - Python 3.11+
 - Hermes with MCP server support
 
-Install from the repository:
+Install from the latest GitHub Release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ld066077/ReadMemory/main/scripts/update-linux.sh | bash
+```
+
+If this project has not published a GitHub Release yet, install from the
+development branch:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ld066077/ReadMemory/main/scripts/update-linux.sh | bash -s -- --ref main
+```
+
+For development from a checked-out repository, run:
 
 ```bash
 ./scripts/install-linux.sh

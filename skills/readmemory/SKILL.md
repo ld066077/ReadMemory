@@ -104,6 +104,30 @@ When the user provides a local EPUB path and asks to add it to ReadMemory:
 3. If import fails, report the failure plainly and ask for a valid local EPUB
    path.
 
+### Maintenance Commands
+
+When the user asks how to install or update ReadMemory, prefer the fixed GitHub
+installer/update flow:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ld066077/ReadMemory/main/scripts/update-linux.sh | bash
+readmemory-update
+```
+
+When the user asks how to remove ReadMemory while keeping config and data:
+
+```bash
+readmemory-uninstall
+```
+
+When the user explicitly asks to remove ReadMemory including config and data:
+
+```bash
+readmemory-uninstall --purge
+```
+
+Warn that `readmemory-uninstall --purge` deletes ReadMemory config and data.
+
 ## Ambiguous Anchor Handling
 
 If `find_anchor.status` is `ambiguous` or `not_found`, do not call
