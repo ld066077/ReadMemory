@@ -1,8 +1,8 @@
 # ReadMemory
 
-ReadMemory is a local source-of-truth layer for English reading notes used through Hermes.
+ReadMemory is a local source-of-truth layer for English reading notes used through [Hermes agent](https://github.com/NousResearch/hermes-agent).
 
-Hermes should use ReadMemory through the `readmemory` MCP server and the ReadMemory Hermes Skill. Hermes memory is not the factual store.
+Hermes agent should use ReadMemory through the `readmemory` MCP server and the ReadMemory skill for Hermes agent. Hermes agent memory is not the factual store.
 
 ## Linux Install
 
@@ -10,25 +10,12 @@ Requirements:
 
 - Linux shell environment
 - Python 3.11+
-- Hermes with MCP server support
+- Hermes agent with MCP server support
 
 Install from the latest GitHub Release:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ld066077/ReadMemory/main/scripts/update-linux.sh | bash
-```
-
-If this project has not published a GitHub Release yet, install from the
-development branch:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ld066077/ReadMemory/main/scripts/update-linux.sh | bash -s -- --ref main
-```
-
-For development from a checked-out repository, run:
-
-```bash
-./scripts/install-linux.sh
 ```
 
 Default user-local paths:
@@ -40,7 +27,7 @@ Default user-local paths:
 - Data: `~/.local/share/readmemory/`
 - Database: `~/.local/share/readmemory/readmemory.sqlite`
 - Exports: `~/.local/share/readmemory/exports/`
-- Hermes skill: `~/.hermes/skills/readmemory/SKILL.md`
+- Hermes agent skill: `~/.hermes/skills/readmemory/SKILL.md`
 
 If `~/.local/bin` is not on `PATH`, add it before running ReadMemory.
 
@@ -53,7 +40,7 @@ readmemory-mcp
 
 The MCP command should either start the MCP server or print a ready JSON object if the optional MCP package is unavailable.
 
-## Hermes MCP Config
+## Hermes agent MCP Config
 
 Use `config/hermes-mcp.example.yaml` as the starting point:
 
@@ -66,7 +53,7 @@ mcp_servers:
       - "/home/user/.config/readmemory/readmemory.toml"
 ```
 
-The installed skill path is:
+The installed Hermes agent skill path is:
 
 ```text
 ~/.hermes/skills/readmemory/SKILL.md
@@ -80,19 +67,13 @@ Update to the latest GitHub Release:
 readmemory-update
 ```
 
-Or run the installer again from a checked-out repository version:
-
-```bash
-./scripts/install-linux.sh
-```
-
 The installer creates a versioned release under `~/.local/opt/readmemory/releases/`, repoints `~/.local/opt/readmemory/current`, refreshes wrappers in `~/.local/bin`, and keeps existing config and data.
 
 See `UPDATE.md` for the GitHub update flow and release checklist.
 
 ## Uninstall
 
-Remove the application, command wrappers, and Hermes skill while keeping config and data:
+Remove the application, command wrappers, and Hermes agent skill while keeping config and data:
 
 ```bash
 readmemory-uninstall
@@ -116,6 +97,18 @@ Back up these paths together:
 - `~/.config/readmemory/readmemory.toml`
 
 ## Development
+
+Install from the development branch instead of the latest GitHub Release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ld066077/ReadMemory/main/scripts/update-linux.sh | bash -s -- --ref main
+```
+
+Install from a checked-out repository:
+
+```bash
+./scripts/install-linux.sh
+```
 
 Run tests from the repository:
 
