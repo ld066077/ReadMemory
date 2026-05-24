@@ -15,54 +15,106 @@ def build_parser() -> ArgumentParser:
     return parser
 
 
-def _make_service() -> tuple[ReadMemoryService, Path]:
+def _make_service() -> tuple[ReadMemoryService, object]:
     paths = resolve_paths()
     paths.ensure()
     store = Store(paths.db_path)
     store.initialize()
-    return ReadMemoryService(store), paths.data_dir
+    return ReadMemoryService(store), paths
 
 
 def main(argv: list[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    service, data_dir = _make_service()
+    args = build_parser().parse_args(argv)
+    service, paths = _make_service()
+    config_path = args.config or paths.config_path
 
     try:
         from mcp.server.fastmcp import FastMCP
     except ImportError:
-        print(json.dumps({"status": "ready", "data_dir": str(data_dir)}, ensure_ascii=False))
+        print(
+            json.dumps(
+                service.status(
+                    config_path=config_path,
+                    data_dir=paths.data_dir,
+                    db_path=paths.db_path,
+                    book_limit=20,
+                ),
+                ensure_ascii=False,
+            )
+        )
         return 0
 
     app = FastMCP("readmemory")
+
+    @app.tool()
+    def status(book_limit: int = 20, unanchored_limit: int = 20) -> dict:
+        return service.status(
+            config_path=config_path,
+            data_dir=paths.data_dir,
+            db_path=paths.db_path,
+            book_limit=book_limit,
+            unanchored_limit=unanchored_limit,
+        )
+
+    @app.tool()
+    def list_books(limit: int = 100) -> list[dict]:
+        return service.list_books(limit=limit)
+
+    @app.tool()
+    def search_books(query: str, limit: int = 10) -> list[dict]:
+        return service.search_books(query=query, limit=limit)
+
+    @app.tool()
+    def resolve_book(book_ref: str, limit: int = 5) -> dict:
+        return service.resolve_book(book_ref=book_ref, limit=limit)
 
     @app.tool()
     def import_book(path: str) -> dict:
         return service.import_book(Path(path))
 
     @app.tool()
-    def find_anchor(book_id: str, quote: str, limit: int = 5) -> dict:
-        return service.find_anchor(book_id=book_id, quote=quote, limit=limit)
+    def search_source(
+        quote: str,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        limit: int = 10,
+    ) -> dict:
+        return service.search_source(book_id=book_id, book_ref=book_ref, quote=quote, limit=limit)
+
+    @app.tool()
+    def find_anchor(
+        quote: str,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        limit: int = 5,
+    ) -> dict:
+        return service.find_anchor(book_id=book_id, book_ref=book_ref, quote=quote, limit=limit)
 
     @app.tool()
     def log_progress(
-        book_id: str,
         stop_quote: str,
+        book_id: str | None = None,
+        book_ref: str | None = None,
         start_quote: str | None = None,
         session_date: str | None = None,
         user_note: str | None = None,
+        allow_unanchored: bool = False,
     ) -> dict:
         return service.log_progress(
             book_id=book_id,
+            book_ref=book_ref,
             stop_quote=stop_quote,
             start_quote=start_quote,
             session_date=session_date,
             user_note=user_note,
+            allow_unanchored=allow_unanchored,
         )
 
     @app.tool()
     def add_vocabulary(
-        book_id: str,
         words: list[str],
+        book_id: str | None = None,
+        book_ref: str | None = None,
         source_sentence: str | None = None,
         user_meaning: str | None = None,
         ai_context_meaning: str | None = None,
@@ -70,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     ) -> list[dict]:
         return service.add_vocabulary(
             book_id=book_id,
+            book_ref=book_ref,
             words=words,
             source_sentence=source_sentence,
             user_meaning=user_meaning,
@@ -79,8 +132,9 @@ def main(argv: list[str] | None = None) -> int:
 
     @app.tool()
     def add_sentence(
-        book_id: str,
         sentence: str,
+        book_id: str | None = None,
+        book_ref: str | None = None,
         reason_saved: str | None = None,
         pattern_note: str | None = None,
         imitation_examples: list[str] | None = None,
@@ -88,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     ) -> dict:
         return service.add_sentence(
             book_id=book_id,
+            book_ref=book_ref,
             sentence=sentence,
             reason_saved=reason_saved,
             pattern_note=pattern_note,
@@ -97,14 +152,16 @@ def main(argv: list[str] | None = None) -> int:
 
     @app.tool()
     def add_thought(
-        book_id: str,
         thought_text: str,
+        book_id: str | None = None,
+        book_ref: str | None = None,
         anchor_id: str | None = None,
         related_quote: str | None = None,
         tags: list[str] | None = None,
     ) -> dict:
         return service.add_thought(
             book_id=book_id,
+            book_ref=book_ref,
             thought_text=thought_text,
             anchor_id=anchor_id,
             related_quote=related_quote,
@@ -112,83 +169,37 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     @app.tool()
-    def get_due_reviews(on_date: str | None = None) -> list[dict]:
-        return service.get_due_reviews(on_date=on_date)
+    def get_due_reviews(
+        on_date: str | None = None,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> list[dict]:
+        return service.get_due_reviews(on_date=on_date, book_id=book_id, book_ref=book_ref)
 
     @app.tool()
     def record_review_result(review_item_id: str, result: str) -> dict:
         return service.record_review_result(review_item_id=review_item_id, result=result)
 
     @app.tool()
-    def generate_daily_log(book_id: str, on_date: str | None = None) -> dict:
-        return service.generate_daily_log(book_id=book_id, on_date=on_date)
+    def generate_daily_log(
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        on_date: str | None = None,
+    ) -> dict:
+        return service.generate_daily_log(book_id=book_id, book_ref=book_ref, on_date=on_date)
 
     @app.tool()
-    def search_notes(query: str, book_id: str | None = None, limit: int = 20) -> list[dict]:
-        if book_id:
-            return service.store.fetchall(
-                """
-                SELECT 'vocabulary' AS note_type, id, book_id, word AS title, source_sentence AS body, anchor_id, created_at
-                FROM vocabulary_notes
-                WHERE book_id = ? AND (word LIKE ? OR source_sentence LIKE ? OR user_meaning LIKE ? OR ai_context_meaning LIKE ?)
-                UNION ALL
-                SELECT 'sentence' AS note_type, id, book_id, sentence AS title, reason_saved AS body, anchor_id, created_at
-                FROM sentence_notes
-                WHERE book_id = ? AND (sentence LIKE ? OR reason_saved LIKE ? OR pattern_note LIKE ?)
-                UNION ALL
-                SELECT 'thought' AS note_type, id, book_id, thought_text AS title, related_quote AS body, anchor_id, created_at
-                FROM thought_notes
-                WHERE book_id = ? AND (thought_text LIKE ? OR related_quote LIKE ? OR tags LIKE ?)
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (
-                    book_id,
-                    f"%{query}%",
-                    f"%{query}%",
-                    f"%{query}%",
-                    f"%{query}%",
-                    book_id,
-                    f"%{query}%",
-                    f"%{query}%",
-                    f"%{query}%",
-                    book_id,
-                    f"%{query}%",
-                    f"%{query}%",
-                    f"%{query}%",
-                    limit,
-                ),
-            )
-        return service.store.fetchall(
-            """
-            SELECT 'vocabulary' AS note_type, id, book_id, word AS title, source_sentence AS body, anchor_id, created_at
-            FROM vocabulary_notes
-            WHERE word LIKE ? OR source_sentence LIKE ? OR user_meaning LIKE ? OR ai_context_meaning LIKE ?
-            UNION ALL
-            SELECT 'sentence' AS note_type, id, book_id, sentence AS title, reason_saved AS body, anchor_id, created_at
-            FROM sentence_notes
-            WHERE sentence LIKE ? OR reason_saved LIKE ? OR pattern_note LIKE ?
-            UNION ALL
-            SELECT 'thought' AS note_type, id, book_id, thought_text AS title, related_quote AS body, anchor_id, created_at
-            FROM thought_notes
-            WHERE thought_text LIKE ? OR related_quote LIKE ? OR tags LIKE ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (
-                f"%{query}%",
-                f"%{query}%",
-                f"%{query}%",
-                f"%{query}%",
-                f"%{query}%",
-                f"%{query}%",
-                f"%{query}%",
-                f"%{query}%",
-                f"%{query}%",
-                f"%{query}%",
-                limit,
-            ),
-        )
+    def search_notes(
+        query: str,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        return service.search_notes(query=query, book_id=book_id, book_ref=book_ref, limit=limit)
+
+    @app.tool()
+    def get_unanchored_items(limit: int = 20) -> dict:
+        return service.get_unanchored_items(limit=limit)
 
     app.run()
     return 0

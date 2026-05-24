@@ -1,0 +1,131 @@
+# v 0.1.1 issues
+
+This document tracks usability issues found in ReadMemory v 0.1.1. Add later
+version sections above this section as new issues are found.
+
+## Summary
+
+ReadMemory v 0.1.1 can install, expose MCP tools, connect to Hermes agent, and
+store reading records. The main usability gap was discovery: users and agents
+did not have enough tools to inspect the local library, find imported books, or
+recover gracefully from incomplete book/title/anchor information.
+
+These issues are addressed in the current working tree for the next release by
+adding book discovery, fuzzy book resolution, explicit unanchored capture,
+ReadMemory status checks, and a fuller Hermes agent skill workflow.
+
+## Issues
+
+### 1. Imported Books Are Not Discoverable
+
+Status: addressed in next release
+Priority: high
+
+Problem:
+ReadMemory did not provide a user-facing way to list imported books. Users could
+not easily confirm whether a book was already imported, what its exact title was,
+or which `book_id` should be used.
+
+Implemented fix:
+- Added service, CLI, and MCP support for listing books.
+- Added `readmemory books` and MCP `list_books`.
+- `status` also includes current library count and recent books.
+
+### 2. Book Search Is Missing
+
+Status: addressed in next release
+Priority: high
+
+Problem:
+There was no read-only search interface for the book library. Users could ask to
+check the database or find a book by title/author, but the tool surface could not
+answer that directly.
+
+Implemented fix:
+- Added fuzzy `search_books(query)` service and MCP tool.
+- Added `readmemory search-books QUERY` CLI command.
+- Hermes agent skill now instructs the agent to search the library before asking
+  for an EPUB path.
+
+### 3. Exact Book Titles Are Too Brittle
+
+Status: addressed in next release
+Priority: high
+
+Problem:
+The workflow relied too heavily on exact title or `book_id` knowledge. Small
+title differences, spelling mistakes, or singular/plural differences could block
+progress.
+
+Implemented fix:
+- Added `resolve_book(book_ref)` service, CLI, and MCP tool.
+- Existing source, anchor, progress, note, review, and daily-log workflows accept
+  `book_ref` in addition to `book_id`.
+- Ambiguous matches return candidate books instead of silently selecting a weak
+  match.
+
+### 4. Anchor Resolution Is Too Strict For First-Pass Capture
+
+Status: addressed in next release
+Priority: medium
+
+Problem:
+Progress logging required a resolved source anchor. In real use, a user may only
+remember a short phrase, chapter heading, or rough location.
+
+Implemented fix:
+- `log_progress` now supports explicit `allow_unanchored` capture.
+- Unanchored progress is stored with status `unanchored` and no end anchor.
+- `status` and `get_unanchored_items` expose records that need later source
+  reconciliation.
+- Notes can be saved to a resolved book even when no anchor is available.
+
+### 5. Tool Availability Is Not Obvious Across Clients
+
+Status: addressed in next release
+Priority: medium
+
+Problem:
+ReadMemory tools could be unavailable in a client until Hermes agent MCP setup,
+restart, or tool selection was completed. The failure mode was not always obvious
+to the user.
+
+Implemented fix:
+- Added `readmemory status` and MCP `status`.
+- `readmemory-mcp` prints ready status JSON if the optional MCP package is not
+  importable.
+- README and Hermes skill now document `hermes mcp list`, `hermes mcp test
+  readmemory`, `readmemory status`, and tool reload expectations.
+
+## Current Priority Order
+
+All v 0.1.1 usability items are addressed in the current working tree. Before
+release, verify:
+
+1. Full test suite passes from the repository with `python -m pytest`.
+2. Hermes agent exposes all ReadMemory MCP tools after reinstall/update.
+3. `readmemory status`, `readmemory books`, `readmemory search-books`, and
+   `readmemory log-progress --allow-unanchored` work on a real user database.
+
+## Future Versions
+
+Add later sections in this format:
+
+```text
+# v x.y.z issues
+
+## Summary
+
+## Issues
+
+### 1. Issue title
+
+Status: open
+Priority: high | medium | low
+
+Problem:
+
+Impact:
+
+Suggested fix:
+```

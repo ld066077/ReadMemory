@@ -12,21 +12,26 @@ agent records durable, searchable reading memory in a local SQLite database.
 Core features:
 
 - Import EPUB books and index their source text.
+- List and search imported books without remembering exact `book_id` values.
+- Resolve approximate book titles or authors into a usable `book_ref`.
 - Resolve pasted quotes back to source anchors in the book.
 - Record reading progress without relying on chat history.
 - Save vocabulary, sentence patterns, and thoughts with source context.
+- Save explicitly unanchored progress or notes when the user wants first-pass
+  capture before exact source reconciliation.
 - Search previous reading notes through Hermes agent.
 - Generate due review queues for saved vocabulary, sentences, and thoughts.
 - Export daily Markdown reading logs.
+- Check ReadMemory/Hermes agent tool health with a status endpoint.
 
 Typical workflow:
 
 1. Import an EPUB into ReadMemory.
 2. While reading, paste a quote, sentence, or note into Hermes agent.
-3. Hermes agent uses ReadMemory tools to resolve the source location and save
-   progress or notes.
-4. Later, ask Hermes agent what you saved, what to review, or to generate a
-   daily reading log.
+3. Hermes agent uses ReadMemory tools to find the book, resolve the source
+   location, and save progress or notes.
+4. Later, ask Hermes agent what you saved, what to review, what needs anchor
+   cleanup, or to generate a daily reading log.
 
 ## Linux Install
 
@@ -57,6 +62,30 @@ hermes mcp list
 hermes mcp test readmemory
 ```
 
+Check ReadMemory itself:
+
+```bash
+readmemory status
+readmemory books
+```
+
+Useful first commands:
+
+```bash
+readmemory import-book /path/to/book.epub
+readmemory search-books "partial title or author"
+readmemory resolve-book "partial title"
+readmemory find-anchor --book-ref "partial title" --quote "pasted source quote"
+readmemory log-progress --book-ref "partial title" --stop-quote "pasted source quote"
+```
+
+For rough capture when the exact source quote cannot be resolved yet:
+
+```bash
+readmemory log-progress --book-ref "partial title" --stop-quote "rough location" --note "chapter 2 near the end" --allow-unanchored
+readmemory status
+```
+
 Default user-local paths:
 
 - App releases: `~/.local/opt/readmemory/releases/`
@@ -74,6 +103,7 @@ If `~/.local/bin` is not on `PATH`, add it before running ReadMemory.
 
 ```bash
 readmemory doctor
+readmemory status
 readmemory-mcp
 ```
 
@@ -84,6 +114,21 @@ The installed Hermes agent skill path is:
 ```text
 ~/.hermes/skills/readmemory/SKILL.md
 ```
+
+## Hermes Agent Tools
+
+The MCP server exposes tools for full ReadMemory control:
+
+- `status`, `list_books`, `search_books`, `resolve_book`
+- `import_book`, `search_source`, `find_anchor`, `log_progress`
+- `add_vocabulary`, `add_sentence`, `add_thought`
+- `get_due_reviews`, `record_review_result`, `generate_daily_log`
+- `search_notes`, `get_unanchored_items`
+
+Hermes agent should start with `status` or book discovery when book identity is
+unclear, use `book_ref` for normal user-facing writes, and only use explicit
+unanchored capture when the user wants to save a rough record that needs later
+source reconciliation.
 
 ## Upgrade
 

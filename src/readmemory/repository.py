@@ -17,15 +17,23 @@ def normalize_quote(text: str) -> str:
 
 
 def match_score(query: str, candidate: str) -> float:
-    if query in candidate:
-        return 1.0
     normalized_query = normalize_quote(query)
     normalized_candidate = normalize_quote(candidate)
-    if not normalized_query:
+    if not normalized_query or not normalized_candidate:
         return 0.0
+    if normalized_query == normalized_candidate:
+        return 1.0
     if normalized_query in normalized_candidate:
         return 0.95
-    return difflib.SequenceMatcher(None, normalized_query, normalized_candidate).ratio()
+
+    query_tokens = set(normalized_query.split())
+    candidate_tokens = set(normalized_candidate.split())
+    token_score = 0.0
+    if query_tokens:
+        token_score = len(query_tokens & candidate_tokens) / len(query_tokens)
+
+    sequence_score = difflib.SequenceMatcher(None, normalized_query, normalized_candidate).ratio()
+    return max(sequence_score, token_score * 0.9)
 
 
 class Repository:
@@ -64,6 +72,28 @@ class Repository:
 
     def get_book_by_hash(self, epub_hash: str) -> dict[str, Any] | None:
         return self.store.fetchone("SELECT * FROM books WHERE epub_hash = ?", (epub_hash,))
+
+    def list_books(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        return self.store.fetchall(
+            """
+            SELECT * FROM books
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+
+    def search_books(self, *, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        term = f"%{query}%"
+        return self.store.fetchall(
+            """
+            SELECT * FROM books
+            WHERE title LIKE ? OR author LIKE ? OR id = ?
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT ?
+            """,
+            (term, term, query, limit),
+        )
 
     def update_book_imported(self, *, book_id: str, total_words: int) -> dict[str, Any]:
         self.store.execute(
@@ -144,7 +174,7 @@ class Repository:
         )
         return self.store.fetchone("SELECT * FROM anchors WHERE id = ?", (item_id,))
 
-    def create_vocabulary_note(self, *, book_id: str, anchor_id: str, word: str) -> dict[str, Any]:
+    def create_vocabulary_note(self, *, book_id: str, anchor_id: str | None, word: str) -> dict[str, Any]:
         item_id = new_id("vocab")
         now = utc_now()
         self.store.execute(
@@ -156,7 +186,7 @@ class Repository:
         )
         return self.store.fetchone("SELECT * FROM vocabulary_notes WHERE id = ?", (item_id,))
 
-    def create_sentence_note(self, *, book_id: str, anchor_id: str, sentence: str) -> dict[str, Any]:
+    def create_sentence_note(self, *, book_id: str, anchor_id: str | None, sentence: str) -> dict[str, Any]:
         item_id = new_id("sentence")
         now = utc_now()
         self.store.execute(
@@ -168,7 +198,7 @@ class Repository:
         )
         return self.store.fetchone("SELECT * FROM sentence_notes WHERE id = ?", (item_id,))
 
-    def create_thought_note(self, *, book_id: str, anchor_id: str, thought_text: str) -> dict[str, Any]:
+    def create_thought_note(self, *, book_id: str, anchor_id: str | None, thought_text: str) -> dict[str, Any]:
         item_id = new_id("thought")
         now = utc_now()
         self.store.execute(
@@ -192,4 +222,3 @@ class Repository:
             (review_id, item_type, item_id, book_id, due_at, now, now),
         )
         return self.store.fetchone("SELECT * FROM review_items WHERE id = ?", (review_id,))
-
