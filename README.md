@@ -18,6 +18,21 @@ Install from the latest GitHub Release:
 curl -fsSL https://raw.githubusercontent.com/ld066077/ReadMemory/main/scripts/update-linux.sh | bash
 ```
 
+Then add ReadMemory to Hermes agent:
+
+```bash
+hermes mcp add readmemory --command readmemory-mcp
+```
+
+When prompted, enable all ReadMemory tools.
+
+Check the Hermes agent connection:
+
+```bash
+hermes mcp list
+hermes mcp test readmemory
+```
+
 Default user-local paths:
 
 - App releases: `~/.local/opt/readmemory/releases/`
@@ -39,23 +54,6 @@ readmemory-mcp
 ```
 
 The MCP command should either start the MCP server or print a ready JSON object if the optional MCP package is unavailable.
-
-## Hermes agent MCP Setup
-
-Add ReadMemory to Hermes agent:
-
-```bash
-hermes mcp add readmemory --command readmemory-mcp
-```
-
-When prompted, enable all ReadMemory tools.
-
-Verify the connection:
-
-```bash
-hermes mcp list
-hermes mcp test readmemory
-```
 
 The installed Hermes agent skill path is:
 
