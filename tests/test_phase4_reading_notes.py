@@ -1,6 +1,6 @@
 import unittest
 
-from helpers import ImportedFixture
+from helpers import FIXTURE_QUOTE, FIXTURE_WORD, ImportedFixture
 
 
 class Phase4ReadingNotesTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class Phase4ReadingNotesTests(unittest.TestCase):
         cls.fixture.cleanup()
 
     def test_progress_and_notes_are_persisted(self) -> None:
-        stop_quote = "On the Heights of Despair"
+        stop_quote = FIXTURE_QUOTE
         progress = self.service.log_progress(
             book_id=self.book_id,
             stop_quote=stop_quote,
@@ -25,9 +25,9 @@ class Phase4ReadingNotesTests(unittest.TestCase):
 
         vocab = self.service.add_vocabulary(
             book_id=self.book_id,
-            words=["despair"],
+            words=[FIXTURE_WORD],
             source_sentence=stop_quote,
-            user_meaning="despair",
+            user_meaning=FIXTURE_WORD,
         )
         sentence = self.service.add_sentence(
             book_id=self.book_id,
@@ -36,16 +36,16 @@ class Phase4ReadingNotesTests(unittest.TestCase):
         )
         thought = self.service.add_thought(
             book_id=self.book_id,
-            thought_text="The title frames the book's emotional tone.",
+            thought_text="The quote frames the reader's memory.",
             related_quote=stop_quote,
         )
         today = self.service.get_today_records(book_id=self.book_id)
 
         self.assertEqual(progress["session"]["user_note"], "first session")
         self.assertIsNotNone(latest)
-        self.assertEqual(vocab[0]["word"], "despair")
+        self.assertEqual(vocab[0]["word"], FIXTURE_WORD)
         self.assertEqual(sentence["sentence"], stop_quote)
-        self.assertEqual(thought["thought_text"], "The title frames the book's emotional tone.")
+        self.assertEqual(thought["thought_text"], "The quote frames the reader's memory.")
         self.assertGreaterEqual(len(today["sessions"]), 1)
         self.assertGreaterEqual(len(today["vocabulary"]), 1)
         self.assertGreaterEqual(len(today["sentences"]), 1)

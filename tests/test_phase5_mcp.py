@@ -1,6 +1,6 @@
 import unittest
 
-from helpers import ImportedFixture
+from helpers import FIXTURE_QUOTE, FIXTURE_WORD, ImportedFixture
 
 
 class Phase5McpTests(unittest.TestCase):
@@ -10,11 +10,11 @@ class Phase5McpTests(unittest.TestCase):
             service = fixture.service
             book_id = fixture.book_id
 
-            anchor = service.find_anchor(book_id=book_id, quote="On the Heights of Despair")
-            progress = service.log_progress(book_id=book_id, stop_quote="On the Heights of Despair")
-            vocab = service.add_vocabulary(book_id=book_id, words=["despair"], source_sentence="On the Heights of Despair")
+            anchor = service.find_anchor(book_id=book_id, quote=FIXTURE_QUOTE)
+            progress = service.log_progress(book_id=book_id, stop_quote=FIXTURE_QUOTE)
+            vocab = service.add_vocabulary(book_id=book_id, words=[FIXTURE_WORD], source_sentence=FIXTURE_QUOTE)
             log = service.get_today_records(book_id=book_id)
-            search = service.search_source(book_id=book_id, quote="On the Heights of Despair")
+            search = service.search_source(book_id=book_id, quote=FIXTURE_QUOTE)
 
             self.assertEqual(anchor["status"], "resolved")
             self.assertIn("session", progress)

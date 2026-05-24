@@ -1,6 +1,6 @@
 import unittest
 
-from helpers import ImportedFixture
+from helpers import FIXTURE_QUOTE, ImportedFixture
 
 
 class Phase3AnchorResolverTests(unittest.TestCase):
@@ -15,7 +15,7 @@ class Phase3AnchorResolverTests(unittest.TestCase):
         cls.fixture.cleanup()
 
     def test_exact_quote_resolves_anchor(self) -> None:
-        result = self.service.find_anchor(book_id=self.book_id, quote="On the Heights of Despair")
+        result = self.service.find_anchor(book_id=self.book_id, quote=FIXTURE_QUOTE)
 
         self.assertEqual(result["status"], "resolved")
         self.assertIsNotNone(result["selected"])
@@ -23,7 +23,7 @@ class Phase3AnchorResolverTests(unittest.TestCase):
         self.assertIn("chapter_index", result["candidates"][0])
 
     def test_normalized_quote_resolves_anchor(self) -> None:
-        result = self.service.find_anchor(book_id=self.book_id, quote="on the heights   of despair")
+        result = self.service.find_anchor(book_id=self.book_id, quote="the margin remembers   every careful sentence")
 
         self.assertEqual(result["status"], "resolved")
         self.assertIsNotNone(result["selected"])

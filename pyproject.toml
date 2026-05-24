@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "readmemory"
-version = "0.1.0"
+version = "0.1.1"
 description = "A verified memory layer for English reading notes."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,4 +24,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

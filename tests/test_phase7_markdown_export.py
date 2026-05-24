@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from helpers import ImportedFixture
+from helpers import FIXTURE_QUOTE, FIXTURE_WORD, ImportedFixture
 
 
 class Phase7MarkdownExportTests(unittest.TestCase):
@@ -12,12 +12,12 @@ class Phase7MarkdownExportTests(unittest.TestCase):
             fixture = ImportedFixture()
             service = fixture.service
             book_id = fixture.book_id
-            quote = "On the Heights of Despair"
+            quote = FIXTURE_QUOTE
 
             service.log_progress(book_id=book_id, stop_quote=quote)
-            service.add_vocabulary(book_id=book_id, words=["despair"], source_sentence=quote)
+            service.add_vocabulary(book_id=book_id, words=[FIXTURE_WORD], source_sentence=quote)
             service.add_sentence(book_id=book_id, sentence=quote)
-            service.add_thought(book_id=book_id, thought_text="The title frames the mood.", related_quote=quote)
+            service.add_thought(book_id=book_id, thought_text="The quote frames the mood.", related_quote=quote)
 
             first = service.generate_daily_log(book_id=book_id, output_dir=tmp_path)
             second = service.generate_daily_log(book_id=book_id, output_dir=tmp_path)

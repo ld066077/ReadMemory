@@ -1,6 +1,6 @@
 import unittest
 
-from helpers import ImportedFixture
+from helpers import FIXTURE_QUOTE, FIXTURE_WORD, ImportedFixture
 
 
 class Phase8ReviewQueueTests(unittest.TestCase):
@@ -8,9 +8,9 @@ class Phase8ReviewQueueTests(unittest.TestCase):
         fixture = ImportedFixture()
         try:
             service = fixture.service
-            quote = "On the Heights of Despair"
+            quote = FIXTURE_QUOTE
             service.log_progress(book_id=fixture.book_id, stop_quote=quote)
-            vocab = service.add_vocabulary(book_id=fixture.book_id, words=["despair"], source_sentence=quote)
+            vocab = service.add_vocabulary(book_id=fixture.book_id, words=[FIXTURE_WORD], source_sentence=quote)
             due = service.get_due_reviews()
 
             self.assertTrue(due)
@@ -24,4 +24,3 @@ class Phase8ReviewQueueTests(unittest.TestCase):
             self.assertEqual(wrong["interval_days"], 1)
         finally:
             fixture.cleanup()
-
