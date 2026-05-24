@@ -4,6 +4,30 @@ ReadMemory is a local source-of-truth layer for English reading notes used throu
 
 Hermes agent should use ReadMemory through the `readmemory` MCP server and the ReadMemory skill for Hermes agent. Hermes agent memory is not the factual store.
 
+## What It Does
+
+ReadMemory helps you keep reading in your existing EPUB reader while Hermes
+agent records durable, searchable reading memory in a local SQLite database.
+
+Core features:
+
+- Import EPUB books and index their source text.
+- Resolve pasted quotes back to source anchors in the book.
+- Record reading progress without relying on chat history.
+- Save vocabulary, sentence patterns, and thoughts with source context.
+- Search previous reading notes through Hermes agent.
+- Generate due review queues for saved vocabulary, sentences, and thoughts.
+- Export daily Markdown reading logs.
+
+Typical workflow:
+
+1. Import an EPUB into ReadMemory.
+2. While reading, paste a quote, sentence, or note into Hermes agent.
+3. Hermes agent uses ReadMemory tools to resolve the source location and save
+   progress or notes.
+4. Later, ask Hermes agent what you saved, what to review, or to generate a
+   daily reading log.
+
 ## Linux Install
 
 Requirements:
