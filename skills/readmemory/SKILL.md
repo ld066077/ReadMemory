@@ -114,6 +114,18 @@ curl -fsSL https://raw.githubusercontent.com/ld066077/ReadMemory/main/scripts/up
 readmemory-update
 ```
 
+When the user asks how to connect ReadMemory to Hermes agent, tell them to add
+and verify the MCP server:
+
+```bash
+hermes mcp add readmemory --command readmemory-mcp
+hermes mcp list
+hermes mcp test readmemory
+```
+
+Tell the user to enable all ReadMemory tools when Hermes agent prompts for tool
+selection.
+
 When the user asks how to remove ReadMemory while keeping config and data:
 
 ```bash
