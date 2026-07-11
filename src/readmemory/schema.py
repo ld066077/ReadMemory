@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 SCHEMA_STATEMENTS = [
@@ -155,10 +155,22 @@ SCHEMA_STATEMENTS = [
         FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE SET NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS action_history (
+        id TEXT PRIMARY KEY,
+        action_type TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        undone_at TEXT,
+        created_at TEXT NOT NULL
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_source_units_book_id ON source_units(book_id)",
     "CREATE INDEX IF NOT EXISTS idx_anchors_book_id ON anchors(book_id)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_book_date ON reading_sessions(book_id, session_date)",
     "CREATE INDEX IF NOT EXISTS idx_review_items_due ON review_items(due_at)",
+    "CREATE INDEX IF NOT EXISTS idx_action_history_created ON action_history(created_at)",
 ]
 
 

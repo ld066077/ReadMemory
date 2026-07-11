@@ -43,7 +43,14 @@ class AnchorResolver:
             deduped.append(candidate)
         return deduped
 
-    def find_anchor(self, *, book_id: str, quote: str, limit: int = 5) -> dict[str, Any]:
+    def find_anchor(
+        self,
+        *,
+        book_id: str,
+        quote: str,
+        limit: int = 5,
+        create_anchor: bool = False,
+    ) -> dict[str, Any]:
         normalized_query = normalize_quote(quote)
         candidates: list[AnchorCandidate] = []
         for unit in self.repo.source_units_for_anchor_search(book_id=book_id):
@@ -79,23 +86,27 @@ class AnchorResolver:
                         0 if item.unit_type == "sentence" else 1,
                     ),
                 )[0]
-                selected = self.repo.create_anchor(
-                    book_id=book_id,
-                    source_unit_id=top.source_unit_id,
-                    anchor_quote=quote,
-                    confidence=top.confidence,
-                )
-                status = "resolved"
-            else:
-                top = candidates[0]
-                second = candidates[1] if len(candidates) > 1 else None
-                if top.confidence >= 0.8 and (second is None or top.confidence - second.confidence >= 0.05):
+                selected = top.to_dict()
+                if create_anchor:
                     selected = self.repo.create_anchor(
                         book_id=book_id,
                         source_unit_id=top.source_unit_id,
                         anchor_quote=quote,
                         confidence=top.confidence,
                     )
+                status = "resolved"
+            else:
+                top = candidates[0]
+                second = candidates[1] if len(candidates) > 1 else None
+                if top.confidence >= 0.8 and (second is None or top.confidence - second.confidence >= 0.05):
+                    selected = top.to_dict()
+                    if create_anchor:
+                        selected = self.repo.create_anchor(
+                            book_id=book_id,
+                            source_unit_id=top.source_unit_id,
+                            anchor_quote=quote,
+                            confidence=top.confidence,
+                        )
                     status = "resolved"
                 elif top.confidence >= 0.35:
                     status = "ambiguous"

@@ -47,7 +47,10 @@ def render_daily_log(*, date: str, records: dict[str, list[dict[str, Any]]], rev
     lines.extend(["## Review Items", ""])
     if reviews:
         for item in reviews:
-            lines.append(f"- {item['item_type']}: `{item['item_id']}` due {item['due_at']}")
+            title = item.get("title") or item["item_id"]
+            lines.append(f"- {item['item_type']}: {title} (due {item['due_at']})")
+            if item.get("context"):
+                lines.append(f"  - Context: {item['context']}")
     else:
         lines.append("- No due review items.")
     lines.append("")
@@ -55,9 +58,9 @@ def render_daily_log(*, date: str, records: dict[str, list[dict[str, Any]]], rev
     return "\n".join(lines)
 
 
-def write_daily_log(*, output_dir: Path, date: str, markdown: str) -> Path:
+def write_daily_log(*, output_dir: Path, date: str, markdown: str, filename_pattern: str = "{date}-reading-log.md") -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{date}-reading-log.md"
+    path = output_dir / filename_pattern.format(date=date)
     path.write_text(markdown, encoding="utf-8")
     return path
 

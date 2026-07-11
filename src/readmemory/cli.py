@@ -3,16 +3,19 @@ from __future__ import annotations
 from argparse import ArgumentParser
 from pathlib import Path
 import json
+import sys
 
 from .config import load_settings
+from .cli_commands import dispatch_extra
 from .paths import resolve_paths
 from .service import ReadMemoryService
 from .storage import Store
 
 
 def build_parser() -> ArgumentParser:
-    parser = ArgumentParser(prog="readmemory")
+    parser = ArgumentParser(prog="readmemory", description="Local, verified memory for reading notes.")
     parser.add_argument("--config", type=Path, default=None)
+    parser.add_argument("--json", action="store_true", dest="json_output", help="print machine-readable JSON")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("init")
     subparsers.add_parser("doctor")
@@ -65,6 +68,54 @@ def build_parser() -> ArgumentParser:
     reviews.add_argument("--date", default=None)
     reviews.add_argument("--book-id", default=None)
     reviews.add_argument("--book-ref", default=None)
+    reviews.add_argument("--mode", choices=["due", "upcoming", "all"], default="due")
+
+    add_word = subparsers.add_parser("add-word", help="save vocabulary with optional source context")
+    add_word.add_argument("words", nargs="+")
+    add_word.add_argument("--book-id", default=None)
+    add_word.add_argument("--book-ref", default=None)
+    add_word.add_argument("--source-sentence", default=None)
+    add_word.add_argument("--meaning", default=None)
+
+    add_sentence = subparsers.add_parser("add-sentence", help="save a sentence note")
+    add_sentence.add_argument("sentence")
+    add_sentence.add_argument("--book-id", default=None)
+    add_sentence.add_argument("--book-ref", default=None)
+    add_sentence.add_argument("--reason", default=None)
+    add_sentence.add_argument("--pattern", default=None)
+
+    add_thought = subparsers.add_parser("add-thought", help="save a thought note")
+    add_thought.add_argument("thought")
+    add_thought.add_argument("--book-id", default=None)
+    add_thought.add_argument("--book-ref", default=None)
+    add_thought.add_argument("--related-quote", default=None)
+    add_thought.add_argument("--tag", action="append", dest="tags")
+
+    notes = subparsers.add_parser("notes", help="search saved reading notes")
+    notes.add_argument("query")
+    notes.add_argument("--book-id", default=None)
+    notes.add_argument("--book-ref", default=None)
+    notes.add_argument("--limit", type=int, default=20)
+
+    unanchored = subparsers.add_parser("unanchored", help="list items needing source reconciliation")
+    unanchored.add_argument("--limit", type=int, default=20)
+
+    reconcile = subparsers.add_parser("reconcile", help="attach an item to a verified source quote")
+    reconcile.add_argument("entity_type", choices=["session", "vocabulary", "sentence", "thought"])
+    reconcile.add_argument("item_id")
+    reconcile.add_argument("--quote", required=True)
+
+    edit = subparsers.add_parser("edit", help="edit a note or reading session")
+    edit.add_argument("entity_type", choices=["session", "vocabulary", "sentence", "thought"])
+    edit.add_argument("item_id")
+    edit.add_argument("--set", action="append", required=True, dest="changes", metavar="FIELD=VALUE")
+
+    delete = subparsers.add_parser("delete", help="delete an item; use undo to restore it")
+    delete.add_argument("entity_type", choices=["session", "vocabulary", "sentence", "thought"])
+    delete.add_argument("item_id")
+    delete.add_argument("--yes", action="store_true", required=True)
+
+    subparsers.add_parser("undo", help="undo the latest create, edit, reconcile, or delete")
 
     review_result = subparsers.add_parser("review-result")
     review_result.add_argument("--review-item-id", required=True)
@@ -76,14 +127,47 @@ def _json_print(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 
-def _make_service() -> ReadMemoryService:
+def _human_print(value: object) -> None:
+    if isinstance(value, list):
+        if not value:
+            print("No results.")
+            return
+        for item in value:
+            if isinstance(item, dict):
+                title = item.get("title") or item.get("word") or item.get("sentence") or item.get("thought_text") or item.get("id")
+                detail = item.get("author") or item.get("context") or item.get("book_title") or ""
+                print(f"- {title}" + (f" — {detail}" if detail else ""))
+            else:
+                print(f"- {item}")
+        return
+    if isinstance(value, dict):
+        if "book_count" in value:
+            print(f"Books: {value['book_count']} | Due reviews: {value.get('due_review_count', 0)}")
+            pending = value.get("unanchored_session_count", 0) + value.get("unanchored_note_count", 0)
+            print(f"Needs reconciliation: {pending}")
+            return
+        if value.get("path"):
+            print(f"Created: {value['path']}")
+            return
+        if value.get("status"):
+            print(f"Status: {value['status']}")
+        _json_print(value)
+        return
+    print(value)
+
+
+def _print(value: object, *, as_json: bool) -> None:
+    _json_print(value) if as_json else _human_print(value)
+
+
+def _make_service(config_path: Path | None = None) -> ReadMemoryService:
     paths = resolve_paths()
     store = Store(paths.db_path)
     store.initialize()
-    return ReadMemoryService(store)
+    return ReadMemoryService(store, settings=load_settings(config_path or paths.config_path), paths=paths)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     paths = resolve_paths()
     settings = load_settings(args.config or paths.config_path)
@@ -94,7 +178,14 @@ def main(argv: list[str] | None = None) -> int:
         if not paths.config_path.exists():
             paths.config_dir.mkdir(parents=True, exist_ok=True)
             paths.config_path.write_text(
-                'log_level = "INFO"\ndefault_language = "en"\n',
+                'log_level = "INFO"\n'
+                'default_language = "en"\n'
+                'review_horizon_days = 7\n'
+                'allow_unanchored_notes = true\n'
+                'markdown_filename_pattern = "{date}-reading-log.md"\n'
+                'review_interval_new_days = 1\n'
+                'review_interval_correct_days = 3\n'
+                'review_interval_weekly_days = 7\n',
                 encoding="utf-8",
             )
         print(f"Initialized ReadMemory at {paths.data_dir}")
@@ -118,57 +209,57 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "status":
         store = Store(paths.db_path)
         store.initialize()
-        result = ReadMemoryService(store).status(
+        result = ReadMemoryService(store, settings=settings, paths=paths).status(
             config_path=args.config or paths.config_path,
             data_dir=paths.data_dir,
             db_path=paths.db_path,
             book_limit=args.limit,
         )
-        _json_print(result)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "books":
-        result = _make_service().list_books(limit=args.limit)
-        _json_print(result)
+        result = _make_service(args.config).list_books(limit=args.limit)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "search-books":
-        result = _make_service().search_books(query=args.query, limit=args.limit)
-        _json_print(result)
+        result = _make_service(args.config).search_books(query=args.query, limit=args.limit)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "resolve-book":
-        result = _make_service().resolve_book(book_ref=args.book_ref, limit=args.limit)
-        _json_print(result)
+        result = _make_service(args.config).resolve_book(book_ref=args.book_ref, limit=args.limit)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "import-book":
-        result = _make_service().import_book(args.path)
-        _json_print(result)
+        result = _make_service(args.config).import_book(args.path)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "search-source":
-        result = _make_service().search_source(
+        result = _make_service(args.config).search_source(
             book_id=args.book_id,
             book_ref=args.book_ref,
             quote=args.quote,
             limit=args.limit,
         )
-        _json_print(result)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "find-anchor":
-        result = _make_service().find_anchor(
+        result = _make_service(args.config).find_anchor(
             book_id=args.book_id,
             book_ref=args.book_ref,
             quote=args.quote,
             limit=args.limit,
         )
-        _json_print(result)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "log-progress":
-        result = _make_service().log_progress(
+        result = _make_service(args.config).log_progress(
             book_id=args.book_id,
             book_ref=args.book_ref,
             stop_quote=args.stop_quote,
@@ -177,37 +268,54 @@ def main(argv: list[str] | None = None) -> int:
             user_note=args.user_note,
             allow_unanchored=args.allow_unanchored,
         )
-        _json_print(result)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "daily-log":
-        result = _make_service().generate_daily_log(
+        result = _make_service(args.config).generate_daily_log(
             book_id=args.book_id,
             book_ref=args.book_ref,
             on_date=args.date,
             output_dir=args.output_dir,
         )
-        _json_print(result)
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "reviews":
-        result = _make_service().get_due_reviews(
+        result = _make_service(args.config).get_due_reviews(
             on_date=args.date,
             book_id=args.book_id,
             book_ref=args.book_ref,
+            mode=args.mode,
         )
-        _json_print(result)
+        _print(result, as_json=args.json_output)
+        return 0
+
+    handled, result = dispatch_extra(args, _make_service(args.config))
+    if handled:
+        _print(result, as_json=args.json_output)
         return 0
 
     if args.command == "review-result":
-        result = _make_service().record_review_result(
+        result = _make_service(args.config).record_review_result(
             review_item_id=args.review_item_id,
             result=args.result,
         )
-        _json_print(result)
+        _print(result, as_json=args.json_output)
         return 0
 
     return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except (ValueError, KeyError, OSError) as exc:
+        message = exc.args[0] if isinstance(exc, KeyError) and exc.args else str(exc)
+        print(f"Error: {message}", file=sys.stderr)
+        if "book_ref" in str(exc) or "book_id" in str(exc):
+            print("Try: readmemory books or readmemory search-books QUERY", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

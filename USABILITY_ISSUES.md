@@ -1,3 +1,20 @@
+# v 0.1.3
+
+## Summary
+
+ReadMemory v0.1.3 focuses on trustworthy capture, correction workflows, and friendlier direct CLI use.
+
+## Implemented
+
+- Anchor lookup is read-only; anchors are persisted only during an explicit save or reconciliation workflow.
+- Notes without a verified source stay unanchored instead of inheriting the most recently created anchor.
+- Review queues distinguish due, upcoming, and all items and include original text, context, and book title.
+- Added reconcile, edit, delete, and undo operations to the service, CLI, and MCP tool surface.
+- Added direct CLI commands for vocabulary, sentences, thoughts, note search, and unanchored cleanup.
+- CLI output is human-readable by default with optional `--json` and friendly expected-error messages.
+- Review intervals and Markdown export paths/file names use configured values.
+- Documentation explains that EPUB files must be accessible on the machine running the Hermes MCP server.
+
 # v 0.1.1 issues
 
 This document tracks usability issues found in ReadMemory v 0.1.1. Add later
@@ -129,3 +146,5 @@ Impact:
 
 Suggested fix:
 ```
+
+Hermes网关不能发送epub，需要把文件放在它本地目录，或者给它可用下载连接,这点要在下个版本说明清楚

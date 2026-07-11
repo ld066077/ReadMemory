@@ -12,9 +12,13 @@ class Phase8ReviewQueueTests(unittest.TestCase):
             service.log_progress(book_id=fixture.book_id, stop_quote=quote)
             vocab = service.add_vocabulary(book_id=fixture.book_id, words=[FIXTURE_WORD], source_sentence=quote)
             due = service.get_due_reviews()
+            upcoming = service.get_due_reviews(mode="upcoming")
+            all_reviews = service.get_due_reviews(mode="all")
 
-            self.assertTrue(due)
-            review = next(item for item in due if item["item_id"] == vocab[0]["id"])
+            self.assertEqual(due, [])
+            self.assertTrue(upcoming)
+            review = next(item for item in all_reviews if item["item_id"] == vocab[0]["id"])
+            self.assertEqual((review["title"], review["context"]), (FIXTURE_WORD, quote))
             correct = service.record_review_result(review_item_id=review["id"], result="correct")
             wrong = service.record_review_result(review_item_id=review["id"], result="wrong")
 

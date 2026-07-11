@@ -174,6 +174,25 @@ class Repository:
         )
         return self.store.fetchone("SELECT * FROM anchors WHERE id = ?", (item_id,))
 
+    def find_anchor(self, *, book_id: str, source_unit_id: str, anchor_quote: str) -> dict[str, Any] | None:
+        rows = self.store.fetchall(
+            """
+            SELECT * FROM anchors
+            WHERE book_id = ? AND source_unit_id = ?
+            ORDER BY created_at DESC
+            """,
+            (book_id, source_unit_id),
+        )
+        normalized = normalize_quote(anchor_quote)
+        return next(
+            (
+                row
+                for row in rows
+                if normalize_quote(str(row.get("anchor_quote") or "")) == normalized
+            ),
+            None,
+        )
+
     def create_vocabulary_note(self, *, book_id: str, anchor_id: str | None, word: str) -> dict[str, Any]:
         item_id = new_id("vocab")
         now = utc_now()

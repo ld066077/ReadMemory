@@ -49,6 +49,10 @@ Hermes agent may expose these as MCP-prefixed tool names such as
 - `get_due_reviews`
 - `record_review_result`
 - `generate_daily_log`
+- `reconcile_item`
+- `edit_item`
+- `delete_item`
+- `undo_last`
 - `search_notes`
 - `get_unanchored_items`
 
@@ -131,6 +135,12 @@ When the user asks for today's reading log, a daily summary, or Markdown export:
 
 ### Importing Books
 
+EPUB paths refer to the filesystem of the machine running `readmemory-mcp`.
+Files uploaded through a Hermes chat or gateway are not automatically available
+to ReadMemory. The EPUB must first be placed or downloaded on the MCP host, then
+passed to `import_book` as a local path. ReadMemory v0.1.3 does not download
+remote URLs itself.
+
 When the user asks to add a book:
 
 1. Call `search_books` first when the title is known, to avoid duplicate import
@@ -162,6 +172,12 @@ readmemory status
 When `status` reports unanchored sessions or notes, mention that they are saved
 but need source reconciliation. Use `get_unanchored_items` when the user asks
 what needs cleanup.
+
+When the user supplies a reliable source quote for an unanchored item, call
+`reconcile_item`. Use `edit_item` for explicit corrections and `delete_item`
+only after the user clearly requests deletion. If the user immediately regrets
+the latest supported write, edit, reconciliation, or deletion, call
+`undo_last`.
 
 ## Ambiguous Anchor Handling
 

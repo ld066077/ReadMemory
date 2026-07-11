@@ -78,6 +78,19 @@ readmemory resolve-book "partial title"
 readmemory find-anchor --book-ref "partial title" --quote "pasted source quote"
 readmemory log-progress --book-ref "partial title" --stop-quote "pasted source quote"
 ```
+Save and maintain notes directly from the CLI:
+
+```bash
+readmemory add-word margin --book-ref "partial title" --source-sentence "source sentence"
+readmemory add-sentence "sentence to remember" --book-ref "partial title"
+readmemory add-thought "my reaction" --book-ref "partial title"
+readmemory notes "search term"
+readmemory unanchored
+readmemory reconcile thought ITEM_ID --quote "exact source quote"
+readmemory edit thought ITEM_ID --set thought_text="revised thought"
+readmemory delete thought ITEM_ID --yes
+readmemory undo
+```
 
 For rough capture when the exact source quote cannot be resolved yet:
 
@@ -91,11 +104,18 @@ Default user-local paths:
 - App releases: `~/.local/opt/readmemory/releases/`
 - Current app: `~/.local/opt/readmemory/current`
 - Commands: `~/.local/bin/readmemory`, `~/.local/bin/readmemory-mcp`, `~/.local/bin/readmemory-update`
+
 - Config: `~/.config/readmemory/readmemory.toml`
 - Data: `~/.local/share/readmemory/`
 - Database: `~/.local/share/readmemory/readmemory.sqlite`
 - Exports: `~/.local/share/readmemory/exports/`
 - Hermes agent skill: `~/.hermes/skills/readmemory/SKILL.md`
+EPUB paths are resolved on the machine running `readmemory-mcp`. A file uploaded
+to a Hermes chat is not automatically available to the MCP server. Put the EPUB
+in a local directory readable by the MCP host, or download it to that host
+before calling `import_book`. ReadMemory does not automatically download remote
+EPUB URLs in v0.1.3.
+
 
 If `~/.local/bin` is not on `PATH`, add it before running ReadMemory.
 
@@ -122,6 +142,7 @@ The MCP server exposes tools for full ReadMemory control:
 - `status`, `list_books`, `search_books`, `resolve_book`
 - `import_book`, `search_source`, `find_anchor`, `log_progress`
 - `add_vocabulary`, `add_sentence`, `add_thought`
+- `reconcile_item`, `edit_item`, `delete_item`, `undo_last`
 - `get_due_reviews`, `record_review_result`, `generate_daily_log`
 - `search_notes`, `get_unanchored_items`
 

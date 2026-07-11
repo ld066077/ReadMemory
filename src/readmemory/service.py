@@ -3,18 +3,30 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+import json
 
 from .anchors import AnchorResolver
+from .config import ReadMemorySettings
 from .epub_importer import parse_epub
 from .ids import new_id
 from .markdown import render_daily_log, write_daily_log
+from .maintenance import MaintenanceMixin
+from .paths import ReadMemoryPaths
 from .repository import Repository, match_score, normalize_quote
 from .storage import Store
 
 
-class ReadMemoryService:
-    def __init__(self, store: Store):
+class ReadMemoryService(MaintenanceMixin):
+    def __init__(
+        self,
+        store: Store,
+        *,
+        settings: ReadMemorySettings | None = None,
+        paths: ReadMemoryPaths | None = None,
+    ):
         self.store = store
+        self.settings = settings or ReadMemorySettings()
+        self.paths = paths
         self.repo = Repository(store)
         self.anchor_resolver = AnchorResolver(self.repo)
 
@@ -136,6 +148,22 @@ class ReadMemoryService:
         resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
         return self.anchor_resolver.find_anchor(book_id=resolved_book_id, quote=quote, limit=limit)
 
+    def _materialize_anchor(self, *, book_id: str, quote: str, selected: dict[str, Any]) -> dict[str, Any]:
+        source_unit_id = str(selected["source_unit_id"])
+        existing = self.repo.find_anchor(
+            book_id=book_id,
+            source_unit_id=source_unit_id,
+            anchor_quote=quote,
+        )
+        if existing:
+            return existing
+        return self.repo.create_anchor(
+            book_id=book_id,
+            source_unit_id=source_unit_id,
+            anchor_quote=quote,
+            confidence=float(selected.get("confidence") or 0.0),
+        )
+
     def get_latest_anchor(self, *, book_id: str) -> dict[str, Any] | None:
         return self.store.fetchone(
             """
@@ -180,12 +208,18 @@ class ReadMemoryService:
                 "status": "unanchored",
             }
 
-        end_anchor = result["selected"]
+        end_anchor = self._materialize_anchor(
+            book_id=resolved_book_id, quote=stop_quote, selected=result["selected"]
+        )
         start_anchor_id = None
         if start_quote:
             start_result = self.find_anchor(book_id=resolved_book_id, quote=start_quote)
             if start_result["status"] == "resolved" and start_result["selected"]:
-                start_anchor_id = start_result["selected"]["id"]
+                start_anchor_id = self._materialize_anchor(
+                    book_id=resolved_book_id,
+                    quote=start_quote,
+                    selected=start_result["selected"],
+                )["id"]
 
         source_unit = self.store.fetchone(
             "SELECT word_count FROM source_units WHERE id = ?",
@@ -205,6 +239,21 @@ class ReadMemoryService:
             "end_anchor": end_anchor,
             "anchor_result": result,
         }
+
+    def _record_action(
+        self, *, action_type: str, entity_type: str, entity_id: str, payload: dict[str, Any]
+    ) -> None:
+        self.store.execute(
+            """
+            INSERT INTO action_history (id, action_type, entity_type, entity_id, payload, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                new_id("action"), action_type, entity_type, entity_id,
+                json.dumps(payload, ensure_ascii=False),
+                datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            ),
+        )
 
     def _create_reading_session(
         self,
@@ -239,7 +288,10 @@ class ReadMemoryService:
                 now,
             ),
         )
-        return self.store.fetchone("SELECT * FROM reading_sessions WHERE id = ?", (session_id,))
+        session = self.store.fetchone("SELECT * FROM reading_sessions WHERE id = ?", (session_id,))
+        if session:
+            self._record_action(action_type="create", entity_type="session", entity_id=session_id, payload={})
+        return session
 
     def _resolve_note_anchor(
         self,
@@ -249,13 +301,19 @@ class ReadMemoryService:
         fallback_quote: str | None = None,
     ) -> str | None:
         if anchor_id:
+            anchor = self.store.fetchone(
+                "SELECT id FROM anchors WHERE id = ? AND book_id = ?", (anchor_id, book_id)
+            )
+            if not anchor:
+                raise ValueError("anchor_id does not belong to the selected book")
             return anchor_id
         if fallback_quote:
             latest = self.find_anchor(book_id=book_id, quote=fallback_quote)
             if latest["status"] == "resolved" and latest["selected"]:
-                return latest["selected"]["id"]
-        latest_anchor = self.get_latest_anchor(book_id=book_id)
-        return latest_anchor["id"] if latest_anchor else None
+                return self._materialize_anchor(
+                    book_id=book_id, quote=fallback_quote, selected=latest["selected"]
+                )["id"]
+        return None
 
     def _create_review_due_at(self, *, days: int) -> str:
         return (datetime.now(timezone.utc) + timedelta(days=days)).replace(microsecond=0).isoformat()
@@ -298,9 +356,11 @@ class ReadMemoryService:
                 book_id=resolved_book_id,
                 item_type="vocabulary",
                 item_id=note["id"],
-                due_at=self._create_review_due_at(days=1),
+                due_at=self._create_review_due_at(days=self.settings.review_interval_new_days),
             )
-            created.append(self.store.fetchone("SELECT * FROM vocabulary_notes WHERE id = ?", (note["id"],)))
+            saved = self.store.fetchone("SELECT * FROM vocabulary_notes WHERE id = ?", (note["id"],))
+            self._record_action(action_type="create", entity_type="vocabulary", entity_id=note["id"], payload={})
+            created.append(saved)
         return created
 
     def add_sentence(
@@ -343,9 +403,11 @@ class ReadMemoryService:
             book_id=resolved_book_id,
             item_type="sentence",
             item_id=note["id"],
-            due_at=self._create_review_due_at(days=1),
+            due_at=self._create_review_due_at(days=self.settings.review_interval_new_days),
         )
-        return self.store.fetchone("SELECT * FROM sentence_notes WHERE id = ?", (note["id"],))
+        saved = self.store.fetchone("SELECT * FROM sentence_notes WHERE id = ?", (note["id"],))
+        self._record_action(action_type="create", entity_type="sentence", entity_id=note["id"], payload={})
+        return saved
 
     def add_thought(
         self,
@@ -385,9 +447,11 @@ class ReadMemoryService:
             book_id=resolved_book_id,
             item_type="thought",
             item_id=note["id"],
-            due_at=self._create_review_due_at(days=7),
+            due_at=self._create_review_due_at(days=self.settings.review_interval_weekly_days),
         )
-        return self.store.fetchone("SELECT * FROM thought_notes WHERE id = ?", (note["id"],))
+        saved = self.store.fetchone("SELECT * FROM thought_notes WHERE id = ?", (note["id"],))
+        self._record_action(action_type="create", entity_type="thought", entity_id=note["id"], payload={})
+        return saved
 
     def get_today_records(
         self,
@@ -419,10 +483,36 @@ class ReadMemoryService:
 
     def _review_cutoff(self, on_date: str | None) -> str:
         if not on_date:
-            return "9999-12-31T23:59:59+00:00"
+            return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         if len(on_date) == 10:
             return f"{on_date}T23:59:59+00:00"
         return on_date
+
+    def _review_rows(self, *, where: str, params: tuple[Any, ...]) -> list[dict[str, Any]]:
+        return self.store.fetchall(
+            f"""
+            SELECT r.*, b.title AS book_title,
+                CASE r.item_type
+                    WHEN 'vocabulary' THEN v.word
+                    WHEN 'sentence' THEN s.sentence
+                    WHEN 'thought' THEN t.thought_text
+                END AS title,
+                CASE r.item_type
+                    WHEN 'vocabulary' THEN COALESCE(v.source_sentence, v.user_meaning, v.ai_context_meaning)
+                    WHEN 'sentence' THEN COALESCE(s.pattern_note, s.reason_saved)
+                    WHEN 'thought' THEN t.related_quote
+                END AS context,
+                COALESCE(v.anchor_id, s.anchor_id, t.anchor_id) AS anchor_id
+            FROM review_items r
+            JOIN books b ON b.id = r.book_id
+            LEFT JOIN vocabulary_notes v ON r.item_type = 'vocabulary' AND v.id = r.item_id
+            LEFT JOIN sentence_notes s ON r.item_type = 'sentence' AND s.id = r.item_id
+            LEFT JOIN thought_notes t ON r.item_type = 'thought' AND t.id = r.item_id
+            WHERE {where}
+            ORDER BY r.due_at ASC, r.created_at ASC
+            """,
+            params,
+        )
 
     def get_due_reviews(
         self,
@@ -430,22 +520,24 @@ class ReadMemoryService:
         on_date: str | None = None,
         book_id: str | None = None,
         book_ref: str | None = None,
+        mode: str = "due",
     ) -> list[dict[str, Any]]:
+        if mode not in {"due", "upcoming", "all"}:
+            raise ValueError("review mode must be due, upcoming, or all")
         target = self._review_cutoff(on_date)
+        clauses: list[str] = []
+        params: list[Any] = []
         if book_id or book_ref:
             resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
-            return self.store.fetchall(
-                """
-                SELECT * FROM review_items
-                WHERE book_id = ? AND due_at <= ?
-                ORDER BY due_at ASC, created_at ASC
-                """,
-                (resolved_book_id, target),
-            )
-        return self.store.fetchall(
-            "SELECT * FROM review_items WHERE due_at <= ? ORDER BY due_at ASC, created_at ASC",
-            (target,),
-        )
+            clauses.append("r.book_id = ?")
+            params.append(resolved_book_id)
+        if mode == "due":
+            clauses.append("r.due_at <= ?")
+            params.append(target)
+        elif mode == "upcoming":
+            clauses.append("r.due_at > ?")
+            params.append(target)
+        return self._review_rows(where=" AND ".join(clauses) or "1 = 1", params=tuple(params))
 
     def record_review_result(self, *, review_item_id: str, result: str) -> dict[str, Any]:
         review = self.store.fetchone("SELECT * FROM review_items WHERE id = ?", (review_item_id,))
@@ -453,13 +545,13 @@ class ReadMemoryService:
             raise KeyError(review_item_id)
         current_interval = int(review["interval_days"] or 1)
         if result == "correct":
-            next_interval = max(current_interval + 2, current_interval * 2)
+            next_interval = max(self.settings.review_interval_correct_days, current_interval * 2)
             ease = min(float(review["ease"] or 2.5) + 0.05, 3.0)
         elif result == "wrong":
-            next_interval = 1
+            next_interval = self.settings.review_interval_new_days
             ease = max(float(review["ease"] or 2.5) - 0.2, 1.3)
         else:
-            next_interval = 1
+            next_interval = self.settings.review_interval_new_days
             ease = float(review["ease"] or 2.5)
 
         due_at = (datetime.now(timezone.utc) + timedelta(days=next_interval)).replace(microsecond=0).isoformat()
@@ -493,10 +585,12 @@ class ReadMemoryService:
         records = self.get_today_records(book_id=resolved_book_id, on_date=target)
         reviews = self.get_due_reviews(on_date=target, book_id=resolved_book_id)
         markdown = render_daily_log(date=target, records=records, reviews=reviews)
+        default_output_dir = self.paths.exports_dir if self.paths else Path.cwd()
         path = write_daily_log(
-            output_dir=output_dir or Path.cwd(),
+            output_dir=output_dir or default_output_dir,
             date=target,
             markdown=markdown,
+            filename_pattern=self.settings.markdown_filename_pattern,
         )
         return {"path": str(path), "markdown": markdown}
 

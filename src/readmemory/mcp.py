@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 
 from .paths import resolve_paths
+from .config import load_settings
 from .service import ReadMemoryService
 from .storage import Store
 
@@ -15,17 +16,17 @@ def build_parser() -> ArgumentParser:
     return parser
 
 
-def _make_service() -> tuple[ReadMemoryService, object]:
+def _make_service(config_path: Path | None = None) -> tuple[ReadMemoryService, object]:
     paths = resolve_paths()
     paths.ensure()
     store = Store(paths.db_path)
     store.initialize()
-    return ReadMemoryService(store), paths
+    return ReadMemoryService(store, settings=load_settings(paths.config_path), paths=paths), paths
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    service, paths = _make_service()
+    service, paths = _make_service(args.config)
     config_path = args.config or paths.config_path
 
     try:
@@ -173,8 +174,9 @@ def main(argv: list[str] | None = None) -> int:
         on_date: str | None = None,
         book_id: str | None = None,
         book_ref: str | None = None,
+        mode: str = "due",
     ) -> list[dict]:
-        return service.get_due_reviews(on_date=on_date, book_id=book_id, book_ref=book_ref)
+        return service.get_due_reviews(on_date=on_date, book_id=book_id, book_ref=book_ref, mode=mode)
 
     @app.tool()
     def record_review_result(review_item_id: str, result: str) -> dict:
@@ -200,6 +202,26 @@ def main(argv: list[str] | None = None) -> int:
     @app.tool()
     def get_unanchored_items(limit: int = 20) -> dict:
         return service.get_unanchored_items(limit=limit)
+
+    @app.tool()
+    def reconcile_item(entity_type: str, item_id: str, quote: str) -> dict:
+        """Attach an unanchored session or note to a verified source quote."""
+        return service.reconcile_item(entity_type=entity_type, item_id=item_id, quote=quote)
+
+    @app.tool()
+    def edit_item(entity_type: str, item_id: str, changes: dict) -> dict:
+        """Edit allowed user-facing fields on a reading session or note."""
+        return service.edit_item(entity_type=entity_type, item_id=item_id, changes=changes)
+
+    @app.tool()
+    def delete_item(entity_type: str, item_id: str) -> dict:
+        """Delete a session or note; the latest deletion can be undone."""
+        return service.delete_item(entity_type=entity_type, item_id=item_id)
+
+    @app.tool()
+    def undo_last() -> dict:
+        """Undo the latest supported create, edit, reconcile, or delete action."""
+        return service.undo_last()
 
     app.run()
     return 0
