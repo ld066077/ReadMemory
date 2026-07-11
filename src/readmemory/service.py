@@ -6,9 +6,11 @@ from typing import Any
 import json
 
 from .anchors import AnchorResolver
+from .backup import create_backup
 from .config import ReadMemorySettings
 from .epub_importer import parse_epub
 from .ids import new_id
+from .import_store import import_parsed_book
 from .markdown import render_daily_log, write_daily_log
 from .maintenance import MaintenanceMixin
 from .paths import ReadMemoryPaths
@@ -32,27 +34,7 @@ class ReadMemoryService(MaintenanceMixin):
 
     def import_book(self, path: Path) -> dict[str, Any]:
         parsed = parse_epub(path)
-        existing = self.repo.get_book_by_hash(parsed.epub_hash)
-        if existing:
-            return {"book": existing, "source_units_created": 0, "status": "already_imported"}
-
-        book = self.repo.create_book(
-            title=parsed.title,
-            author=parsed.author,
-            language=parsed.language,
-            epub_hash=parsed.epub_hash,
-            source_path=str(path),
-            total_words=parsed.total_words,
-            import_status="importing",
-        )
-        for unit in parsed.source_units:
-            self.repo.create_source_unit_from_import(book_id=book["id"], unit=unit)
-        book = self.repo.update_book_imported(book_id=book["id"], total_words=parsed.total_words)
-        return {
-            "book": book,
-            "source_units_created": len(parsed.source_units),
-            "status": "imported",
-        }
+        return import_parsed_book(store=self.store, parsed=parsed, source_path=path)
 
     def list_books(self, *, limit: int = 100) -> list[dict[str, Any]]:
         return self.repo.list_books(limit=max(limit, 0))
@@ -328,6 +310,7 @@ class ReadMemoryService(MaintenanceMixin):
         ai_context_meaning: str | None = None,
         anchor_id: str | None = None,
         book_ref: str | None = None,
+        note_date: str | None = None,
     ) -> list[dict[str, Any]]:
         resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
         resolved_anchor_id = self._resolve_note_anchor(
@@ -342,6 +325,7 @@ class ReadMemoryService(MaintenanceMixin):
                 book_id=resolved_book_id,
                 anchor_id=resolved_anchor_id,
                 word=word,
+                note_date=note_date or date.today().isoformat(),
             )
             if source_sentence or user_meaning or ai_context_meaning:
                 self.store.execute(
@@ -372,6 +356,7 @@ class ReadMemoryService(MaintenanceMixin):
         pattern_note: str | None = None,
         imitation_examples: list[str] | None = None,
         anchor_id: str | None = None,
+        note_date: str | None = None,
         book_ref: str | None = None,
     ) -> dict[str, Any]:
         resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
@@ -382,6 +367,7 @@ class ReadMemoryService(MaintenanceMixin):
         )
         note = self.repo.create_sentence_note(
             book_id=resolved_book_id,
+            note_date=note_date or date.today().isoformat(),
             anchor_id=resolved_anchor_id,
             sentence=sentence,
         )
@@ -418,6 +404,7 @@ class ReadMemoryService(MaintenanceMixin):
         related_quote: str | None = None,
         tags: list[str] | None = None,
         book_ref: str | None = None,
+        note_date: str | None = None,
     ) -> dict[str, Any]:
         resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
         resolved_anchor_id = self._resolve_note_anchor(
@@ -429,6 +416,7 @@ class ReadMemoryService(MaintenanceMixin):
             book_id=resolved_book_id,
             anchor_id=resolved_anchor_id,
             thought_text=thought_text,
+            note_date=note_date or date.today().isoformat(),
         )
         self.store.execute(
             """
@@ -468,15 +456,15 @@ class ReadMemoryService(MaintenanceMixin):
                 (resolved_book_id, target),
             ),
             "vocabulary": self.store.fetchall(
-                "SELECT * FROM vocabulary_notes WHERE book_id = ? AND date(created_at) = ? ORDER BY created_at ASC",
+                "SELECT * FROM vocabulary_notes WHERE book_id = ? AND note_date = ? ORDER BY created_at ASC",
                 (resolved_book_id, target),
             ),
             "sentences": self.store.fetchall(
-                "SELECT * FROM sentence_notes WHERE book_id = ? AND date(created_at) = ? ORDER BY created_at ASC",
+                "SELECT * FROM sentence_notes WHERE book_id = ? AND note_date = ? ORDER BY created_at ASC",
                 (resolved_book_id, target),
             ),
             "thoughts": self.store.fetchall(
-                "SELECT * FROM thought_notes WHERE book_id = ? AND date(created_at) = ? ORDER BY created_at ASC",
+                "SELECT * FROM thought_notes WHERE book_id = ? AND note_date = ? ORDER BY created_at ASC",
                 (resolved_book_id, target),
             ),
         }
@@ -668,6 +656,11 @@ class ReadMemoryService(MaintenanceMixin):
                 limit,
             ),
         )
+
+    def backup(self, *, output_dir: Path | None = None) -> dict[str, Any]:
+        if not self.paths:
+            raise ValueError("backup requires configured ReadMemory paths")
+        return create_backup(paths=self.paths, output_dir=output_dir)
 
     def _count(self, sql: str, params: tuple[Any, ...] = ()) -> int:
         row = self.store.fetchone(sql, params) or {"count": 0}

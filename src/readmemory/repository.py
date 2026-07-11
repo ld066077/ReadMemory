@@ -193,39 +193,39 @@ class Repository:
             None,
         )
 
-    def create_vocabulary_note(self, *, book_id: str, anchor_id: str | None, word: str) -> dict[str, Any]:
+    def create_vocabulary_note(self, *, book_id: str, anchor_id: str | None, word: str, note_date: str | None = None) -> dict[str, Any]:
         item_id = new_id("vocab")
         now = utc_now()
         self.store.execute(
             """
-            INSERT INTO vocabulary_notes (id, book_id, anchor_id, word, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO vocabulary_notes (id, book_id, anchor_id, word, note_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (item_id, book_id, anchor_id, word, now, now),
+            (item_id, book_id, anchor_id, word, note_date, now, now),
         )
         return self.store.fetchone("SELECT * FROM vocabulary_notes WHERE id = ?", (item_id,))
 
-    def create_sentence_note(self, *, book_id: str, anchor_id: str | None, sentence: str) -> dict[str, Any]:
+    def create_sentence_note(self, *, book_id: str, anchor_id: str | None, sentence: str, note_date: str | None = None) -> dict[str, Any]:
         item_id = new_id("sentence")
         now = utc_now()
         self.store.execute(
             """
-            INSERT INTO sentence_notes (id, book_id, anchor_id, sentence, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO sentence_notes (id, book_id, anchor_id, sentence, note_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (item_id, book_id, anchor_id, sentence, now, now),
+            (item_id, book_id, anchor_id, sentence, note_date, now, now),
         )
         return self.store.fetchone("SELECT * FROM sentence_notes WHERE id = ?", (item_id,))
 
-    def create_thought_note(self, *, book_id: str, anchor_id: str | None, thought_text: str) -> dict[str, Any]:
+    def create_thought_note(self, *, book_id: str, anchor_id: str | None, thought_text: str, note_date: str | None = None) -> dict[str, Any]:
         item_id = new_id("thought")
         now = utc_now()
         self.store.execute(
             """
-            INSERT INTO thought_notes (id, book_id, anchor_id, thought_text, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO thought_notes (id, book_id, anchor_id, thought_text, note_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (item_id, book_id, anchor_id, thought_text, now, now),
+            (item_id, book_id, anchor_id, thought_text, note_date, now, now),
         )
         return self.store.fetchone("SELECT * FROM thought_notes WHERE id = ?", (item_id,))
 

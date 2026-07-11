@@ -21,7 +21,7 @@ def _make_service(config_path: Path | None = None) -> tuple[ReadMemoryService, o
     paths.ensure()
     store = Store(paths.db_path)
     store.initialize()
-    return ReadMemoryService(store, settings=load_settings(paths.config_path), paths=paths), paths
+    return ReadMemoryService(store, settings=load_settings(config_path or paths.config_path), paths=paths), paths
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -120,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         user_meaning: str | None = None,
         ai_context_meaning: str | None = None,
         anchor_id: str | None = None,
+        note_date: str | None = None,
     ) -> list[dict]:
         return service.add_vocabulary(
             book_id=book_id,
@@ -129,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             user_meaning=user_meaning,
             ai_context_meaning=ai_context_meaning,
             anchor_id=anchor_id,
+            note_date=note_date,
         )
 
     @app.tool()
@@ -140,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         pattern_note: str | None = None,
         imitation_examples: list[str] | None = None,
         anchor_id: str | None = None,
+        note_date: str | None = None,
     ) -> dict:
         return service.add_sentence(
             book_id=book_id,
@@ -149,12 +152,14 @@ def main(argv: list[str] | None = None) -> int:
             pattern_note=pattern_note,
             imitation_examples=imitation_examples,
             anchor_id=anchor_id,
+            note_date=note_date,
         )
 
     @app.tool()
     def add_thought(
         thought_text: str,
         book_id: str | None = None,
+        note_date: str | None = None,
         book_ref: str | None = None,
         anchor_id: str | None = None,
         related_quote: str | None = None,
@@ -165,6 +170,7 @@ def main(argv: list[str] | None = None) -> int:
             book_ref=book_ref,
             thought_text=thought_text,
             anchor_id=anchor_id,
+            note_date=note_date,
             related_quote=related_quote,
             tags=tags,
         )
@@ -222,6 +228,11 @@ def main(argv: list[str] | None = None) -> int:
     def undo_last() -> dict:
         """Undo the latest supported create, edit, reconcile, or delete action."""
         return service.undo_last()
+
+    @app.tool()
+    def create_backup(output_dir: str | None = None) -> dict:
+        """Create a portable backup of the database, config, books, and exports."""
+        return service.backup(output_dir=None if output_dir is None else Path(output_dir))
 
     app.run()
     return 0

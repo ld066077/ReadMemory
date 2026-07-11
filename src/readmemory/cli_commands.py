@@ -10,6 +10,7 @@ def dispatch_extra(args: Any, service: Any) -> tuple[bool, object | None]:
             book_ref=args.book_ref,
             words=args.words,
             source_sentence=args.source_sentence,
+            note_date=args.note_date,
             user_meaning=args.meaning,
         )
     if args.command == "add-sentence":
@@ -19,6 +20,7 @@ def dispatch_extra(args: Any, service: Any) -> tuple[bool, object | None]:
             sentence=args.sentence,
             reason_saved=args.reason,
             pattern_note=args.pattern,
+            note_date=args.note_date,
         )
     if args.command == "add-thought":
         return True, service.add_thought(
@@ -27,6 +29,7 @@ def dispatch_extra(args: Any, service: Any) -> tuple[bool, object | None]:
             thought_text=args.thought,
             related_quote=args.related_quote,
             tags=args.tags,
+            note_date=args.note_date,
         )
     if args.command == "notes":
         return True, service.search_notes(
@@ -60,6 +63,8 @@ def dispatch_extra(args: Any, service: Any) -> tuple[bool, object | None]:
             entity_type=args.entity_type,
             item_id=args.item_id,
         )
+    if args.command == "backup":
+        return True, service.backup(output_dir=args.output_dir)
     if args.command == "undo":
         return True, service.undo_last()
     return False, None

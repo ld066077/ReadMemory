@@ -81,15 +81,16 @@ readmemory log-progress --book-ref "partial title" --stop-quote "pasted source q
 Save and maintain notes directly from the CLI:
 
 ```bash
-readmemory add-word margin --book-ref "partial title" --source-sentence "source sentence"
-readmemory add-sentence "sentence to remember" --book-ref "partial title"
-readmemory add-thought "my reaction" --book-ref "partial title"
+readmemory add-word margin --book-ref "partial title" --source-sentence "source sentence" --date 2026-07-11
+readmemory add-sentence "sentence to remember" --book-ref "partial title" --date 2026-07-11
+readmemory add-thought "my reaction" --book-ref "partial title" --date 2026-07-11
 readmemory notes "search term"
 readmemory unanchored
 readmemory reconcile thought ITEM_ID --quote "exact source quote"
 readmemory edit thought ITEM_ID --set thought_text="revised thought"
 readmemory delete thought ITEM_ID --yes
 readmemory undo
+readmemory backup
 ```
 
 For rough capture when the exact source quote cannot be resolved yet:
@@ -104,17 +105,16 @@ Default user-local paths:
 - App releases: `~/.local/opt/readmemory/releases/`
 - Current app: `~/.local/opt/readmemory/current`
 - Commands: `~/.local/bin/readmemory`, `~/.local/bin/readmemory-mcp`, `~/.local/bin/readmemory-update`
-
 - Config: `~/.config/readmemory/readmemory.toml`
 - Data: `~/.local/share/readmemory/`
 - Database: `~/.local/share/readmemory/readmemory.sqlite`
 - Exports: `~/.local/share/readmemory/exports/`
 - Hermes agent skill: `~/.hermes/skills/readmemory/SKILL.md`
+
 EPUB paths are resolved on the machine running `readmemory-mcp`. A file uploaded
 to a Hermes chat is not automatically available to the MCP server. Put the EPUB
 in a local directory readable by the MCP host, or download it to that host
-before calling `import_book`. ReadMemory does not automatically download remote
-EPUB URLs in v0.1.3.
+before calling `import_book`. ReadMemory does not automatically download remote EPUB URLs.
 
 
 If `~/.local/bin` is not on `PATH`, add it before running ReadMemory.
@@ -143,6 +143,7 @@ The MCP server exposes tools for full ReadMemory control:
 - `import_book`, `search_source`, `find_anchor`, `log_progress`
 - `add_vocabulary`, `add_sentence`, `add_thought`
 - `reconcile_item`, `edit_item`, `delete_item`, `undo_last`
+- `create_backup`
 - `get_due_reviews`, `record_review_result`, `generate_daily_log`
 - `search_notes`, `get_unanchored_items`
 
@@ -181,7 +182,17 @@ The purge path is intentionally guarded by marker files so the uninstall script 
 
 ## Backup
 
-Back up these paths together:
+Create a portable backup archive:
+
+```bash
+readmemory backup
+```
+
+The archive is written to `~/.local/share/readmemory/backups/` by default and
+contains a consistent SQLite snapshot, ReadMemory config, stored books,
+exports, and a manifest. It does not include Hermes or GitHub credentials.
+
+Use `--output-dir` to place it elsewhere. For manual backups, copy:
 
 - `~/.local/share/readmemory/readmemory.sqlite`
 - `~/.local/share/readmemory/books/`

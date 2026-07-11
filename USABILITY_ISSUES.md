@@ -1,3 +1,19 @@
+# v 0.1.4
+
+## Summary
+
+ReadMemory v0.1.4 improves date consistency, import safety, and data portability.
+
+## Implemented
+
+- Added explicit `note_date` support to vocabulary, sentence, and thought notes.
+- Daily logs group notes by note date so dated sessions and notes export together.
+- Added schema v3 migration with date backfill for existing notes.
+- EPUB database writes run in one transaction and roll back fully on failure.
+- Added `readmemory backup` and MCP `create_backup` for database, config, stored books, exports, and manifest.
+- Backups exclude Hermes credentials, GitHub credentials, and unrelated files.
+- Verified migration on a real v0.1.3 database copy without record-count changes.
+
 # v 0.1.3
 
 ## Summary

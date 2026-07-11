@@ -74,6 +74,7 @@ def build_parser() -> ArgumentParser:
     add_word.add_argument("words", nargs="+")
     add_word.add_argument("--book-id", default=None)
     add_word.add_argument("--book-ref", default=None)
+    add_word.add_argument("--date", dest="note_date", default=None)
     add_word.add_argument("--source-sentence", default=None)
     add_word.add_argument("--meaning", default=None)
 
@@ -81,6 +82,7 @@ def build_parser() -> ArgumentParser:
     add_sentence.add_argument("sentence")
     add_sentence.add_argument("--book-id", default=None)
     add_sentence.add_argument("--book-ref", default=None)
+    add_sentence.add_argument("--date", dest="note_date", default=None)
     add_sentence.add_argument("--reason", default=None)
     add_sentence.add_argument("--pattern", default=None)
 
@@ -88,6 +90,7 @@ def build_parser() -> ArgumentParser:
     add_thought.add_argument("thought")
     add_thought.add_argument("--book-id", default=None)
     add_thought.add_argument("--book-ref", default=None)
+    add_thought.add_argument("--date", dest="note_date", default=None)
     add_thought.add_argument("--related-quote", default=None)
     add_thought.add_argument("--tag", action="append", dest="tags")
 
@@ -114,6 +117,9 @@ def build_parser() -> ArgumentParser:
     delete.add_argument("entity_type", choices=["session", "vocabulary", "sentence", "thought"])
     delete.add_argument("item_id")
     delete.add_argument("--yes", action="store_true", required=True)
+
+    backup = subparsers.add_parser("backup", help="create a portable local backup archive")
+    backup.add_argument("--output-dir", type=Path, default=None)
 
     subparsers.add_parser("undo", help="undo the latest create, edit, reconcile, or delete")
 

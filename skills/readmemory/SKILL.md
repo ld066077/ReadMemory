@@ -55,6 +55,7 @@ Hermes agent may expose these as MCP-prefixed tool names such as
 - `undo_last`
 - `search_notes`
 - `get_unanchored_items`
+- `create_backup`
 
 ## Book Discovery
 
@@ -112,6 +113,9 @@ thoughts:
    book, save it anyway and say no source anchor was attached.
 5. Do not silently drop any user-provided meaning, sentence, tags, or examples.
 
+When the user specifies a reading date, pass the same value as `note_date` so
+notes and reading sessions appear in the same daily log.
+
 ### Reviews
 
 When the user asks what to review, what is due, or wants to start review:
@@ -138,7 +142,7 @@ When the user asks for today's reading log, a daily summary, or Markdown export:
 EPUB paths refer to the filesystem of the machine running `readmemory-mcp`.
 Files uploaded through a Hermes chat or gateway are not automatically available
 to ReadMemory. The EPUB must first be placed or downloaded on the MCP host, then
-passed to `import_book` as a local path. ReadMemory v0.1.3 does not download
+passed to `import_book` as a local path. ReadMemory does not download
 remote URLs itself.
 
 When the user asks to add a book:
@@ -218,6 +222,11 @@ hermes mcp test readmemory
 
 Tell the user to enable all ReadMemory tools when Hermes agent prompts for tool
 selection.
+
+When the user asks to back up ReadMemory, call `create_backup`. Report the
+archive path and clarify that it contains a consistent database snapshot,
+ReadMemory config, books stored in the ReadMemory books directory, exports, and
+a manifest. It does not include Hermes or GitHub credentials.
 
 When the user asks how to remove ReadMemory while keeping config and data:
 

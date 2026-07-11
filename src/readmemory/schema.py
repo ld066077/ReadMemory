@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 
 SCHEMA_STATEMENTS = [
@@ -91,6 +91,7 @@ SCHEMA_STATEMENTS = [
         ai_context_meaning TEXT,
         status TEXT NOT NULL DEFAULT 'new',
         next_review_at TEXT,
+        note_date TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
@@ -108,6 +109,7 @@ SCHEMA_STATEMENTS = [
         imitation_examples TEXT,
         status TEXT NOT NULL DEFAULT 'new',
         next_review_at TEXT,
+        note_date TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
@@ -121,6 +123,7 @@ SCHEMA_STATEMENTS = [
         anchor_id TEXT,
         thought_text TEXT NOT NULL,
         related_quote TEXT,
+        note_date TEXT,
         tags TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -174,13 +177,33 @@ SCHEMA_STATEMENTS = [
 ]
 
 
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _migrate_to_v3(conn: sqlite3.Connection) -> None:
+    for table in ("vocabulary_notes", "sentence_notes", "thought_notes"):
+        if "note_date" not in _columns(conn, table):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN note_date TEXT")
+        conn.execute(
+            f"UPDATE {table} SET note_date = date(created_at) "
+            "WHERE note_date IS NULL OR note_date = ''"
+        )
+
+
 def initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
-    for statement in SCHEMA_STATEMENTS:
-        conn.execute(statement)
-    conn.execute(
-        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
-        ("schema_version", SCHEMA_VERSION),
-    )
-    conn.commit()
+    try:
+        conn.execute("BEGIN")
+        for statement in SCHEMA_STATEMENTS:
+            conn.execute(statement)
+        _migrate_to_v3(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+            ("schema_version", SCHEMA_VERSION),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 

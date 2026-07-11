@@ -13,13 +13,13 @@ class MaintenanceMixin:
             "session": ("reading_sessions", {"session_date", "user_note", "status"}),
             "vocabulary": (
                 "vocabulary_notes",
-                {"word", "source_sentence", "user_meaning", "ai_context_meaning"},
+                {"word", "source_sentence", "user_meaning", "ai_context_meaning", "note_date"},
             ),
             "sentence": (
                 "sentence_notes",
-                {"sentence", "reason_saved", "pattern_note", "imitation_examples"},
+                {"sentence", "reason_saved", "pattern_note", "imitation_examples", "note_date"},
             ),
-            "thought": ("thought_notes", {"thought_text", "related_quote", "tags"}),
+            "thought": ("thought_notes", {"thought_text", "related_quote", "tags", "note_date"}),
         }
         if entity_type not in specs:
             raise ValueError("entity_type must be session, vocabulary, sentence, or thought")
