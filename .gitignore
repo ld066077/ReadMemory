@@ -11,4 +11,5 @@ dist/
 *.egg-info/
 *.sqlite
 *.db
+HERMES_INTEGRATION_TEST_*.md
 
