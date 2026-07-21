@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 
 
 SCHEMA_STATEMENTS = [
@@ -231,6 +231,13 @@ def _migrate_to_v4(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_to_v5(conn: sqlite3.Connection) -> None:
+    if "lesson_content" not in _columns(conn, "vocabulary_notes"):
+        conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN lesson_content TEXT")
+    if "lesson_generated_at" not in _columns(conn, "vocabulary_notes"):
+        conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN lesson_generated_at TEXT")
+
+
 def initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -239,6 +246,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             conn.execute(statement)
         _migrate_to_v3(conn)
         _migrate_to_v4(conn)
+        _migrate_to_v5(conn)
         conn.execute(
             "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
             ("schema_version", SCHEMA_VERSION),

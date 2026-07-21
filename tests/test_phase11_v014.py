@@ -39,7 +39,7 @@ class Phase11V014Tests(unittest.TestCase):
             note = store.fetchone(
                 "SELECT note_date FROM vocabulary_notes WHERE id = ?", ("vocab_old",)
             )
-            self.assertEqual(version["value"], "4")
+            self.assertEqual(version["value"], "5")
             self.assertEqual(note["note_date"], "2026-01-03")
 
     def test_explicit_note_date_appears_in_matching_daily_log(self) -> None:
@@ -154,7 +154,7 @@ class Phase11V014Tests(unittest.TestCase):
             try:
                 self.assertEqual(
                     conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0],
-                    "4",
+                    "5",
                 )
             finally:
                 conn.close()

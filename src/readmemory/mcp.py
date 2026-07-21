@@ -226,8 +226,34 @@ def main(argv: list[str] | None = None) -> int:
         book_id: str | None = None,
         book_ref: str | None = None,
         mode: str = "due",
-    ) -> list[dict]:
-        return service.get_due_reviews(on_date=on_date, book_id=book_id, book_ref=book_ref, mode=mode)
+        group_by_family: bool = False,
+    ) -> list[dict] | dict:
+        return service.get_due_reviews(
+            on_date=on_date, book_id=book_id, book_ref=book_ref,
+            mode=mode, group_by_family=group_by_family,
+        )
+
+    @app.tool()
+    def get_lesson(
+        group_key: str,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> dict:
+        """Get lesson content and context for a word family."""
+        return service.get_lesson(book_id=book_id, book_ref=book_ref, group_key=group_key)
+
+    @app.tool()
+    def save_lesson(
+        group_key: str,
+        lesson_content: str,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> dict:
+        """Save AI-generated lesson content for a word family."""
+        return service.save_lesson(
+            book_id=book_id, book_ref=book_ref,
+            group_key=group_key, lesson_content=lesson_content,
+        )
 
     @app.tool()
     def record_review_result(review_item_id: str, result: str) -> dict:

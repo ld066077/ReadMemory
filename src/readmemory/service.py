@@ -585,7 +585,11 @@ class ReadMemoryService(MaintenanceMixin):
                     WHEN 'sentence' THEN COALESCE(s.pattern_note, s.reason_saved)
                     WHEN 'thought' THEN t.related_quote
                 END AS context,
-                COALESCE(v.anchor_id, s.anchor_id, t.anchor_id) AS anchor_id
+                COALESCE(v.anchor_id, s.anchor_id, t.anchor_id) AS anchor_id,
+                v.group_key AS group_key,
+                v.lemma AS lemma,
+                v.lesson_content AS lesson_content,
+                v.lesson_generated_at AS lesson_generated_at
             FROM review_items r
             JOIN books b ON b.id = r.book_id
             LEFT JOIN vocabulary_notes v ON r.item_type = 'vocabulary' AND v.id = r.item_id
@@ -620,7 +624,8 @@ class ReadMemoryService(MaintenanceMixin):
         book_id: str | None = None,
         book_ref: str | None = None,
         mode: str = "due",
-    ) -> list[dict[str, Any]]:
+        group_by_family: bool = False,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         if mode not in {"due", "upcoming", "all"}:
             raise ValueError("review mode must be due, upcoming, or all")
         target = self._review_cutoff(on_date)
@@ -639,22 +644,72 @@ class ReadMemoryService(MaintenanceMixin):
         rows = self._review_rows(where=" AND ".join(clauses) or "1 = 1", params=tuple(params))
         for row in rows:
             row["prompt"] = self._review_prompt(row)
-        return rows
+            # Build lesson placeholder for vocabulary items without one.
+            if row.get("item_type") == "vocabulary" and not row.get("lesson_content"):
+                row["lesson"] = None
+                row["needs_lesson"] = True
+            else:
+                row["lesson"] = row.get("lesson_content")
+                row["needs_lesson"] = False
+
+        if not group_by_family:
+            return rows
+
+        # Group vocabulary items by word family (group_key).
+        groups: dict[str, dict[str, Any]] = {}
+        ungrouped: list[dict[str, Any]] = []
+        for row in rows:
+            if row.get("item_type") != "vocabulary" or not row.get("group_key"):
+                ungrouped.append(row)
+                continue
+            key = row["group_key"]
+            if key not in groups:
+                groups[key] = {
+                    "group_key": key,
+                    "lemma": row.get("lemma"),
+                    "book_title": row.get("book_title"),
+                    "items": [],
+                    "needs_lesson": False,
+                    "earliest_due": row["due_at"],
+                }
+            groups[key]["items"].append(row)
+            if row.get("needs_lesson"):
+                groups[key]["needs_lesson"] = True
+            if row["due_at"] < groups[key]["earliest_due"]:
+                groups[key]["earliest_due"] = row["due_at"]
+        return {
+            "grouped": list(groups.values()),
+            "ungrouped": ungrouped,
+        }
 
     def record_review_result(self, *, review_item_id: str, result: str) -> dict[str, Any]:
         review = self.store.fetchone("SELECT * FROM review_items WHERE id = ?", (review_item_id,))
         if not review:
             raise KeyError(review_item_id)
         current_interval = int(review["interval_days"] or 1)
-        if result == "correct":
+        if result in {"correct", "known"}:
             next_interval = max(self.settings.review_interval_correct_days, current_interval * 2)
             ease = min(float(review["ease"] or 2.5) + 0.05, 3.0)
-        elif result == "wrong":
+            normalized_result = "correct"
+        elif result in {"wrong", "unknown"}:
             next_interval = self.settings.review_interval_new_days
             ease = max(float(review["ease"] or 2.5) - 0.2, 1.3)
-        else:
+            normalized_result = "wrong"
+        elif result == "fuzzy":
+            # Known but shaky: keep interval short, slight ease penalty.
+            next_interval = max(1, current_interval // 2)
+            ease = max(float(review["ease"] or 2.5) - 0.05, 1.3)
+            normalized_result = "uncertain"
+        elif result == "want_lesson":
+            # User wants AI teaching first: reset to new-item interval.
             next_interval = self.settings.review_interval_new_days
             ease = float(review["ease"] or 2.5)
+            normalized_result = "uncertain"
+        else:
+            # uncertain / any other value
+            next_interval = self.settings.review_interval_new_days
+            ease = float(review["ease"] or 2.5)
+            normalized_result = "uncertain"
 
         due_at = (datetime.now(timezone.utc) + timedelta(days=next_interval)).replace(microsecond=0).isoformat()
         self.store.execute(
@@ -667,7 +722,7 @@ class ReadMemoryService(MaintenanceMixin):
                 due_at,
                 next_interval,
                 ease,
-                result,
+                normalized_result,
                 datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
                 review_item_id,
             ),
@@ -685,7 +740,7 @@ class ReadMemoryService(MaintenanceMixin):
         resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
         target = on_date or date.today().isoformat()
         records = self.get_today_records(book_id=resolved_book_id, on_date=target)
-        reviews = self.get_due_reviews(on_date=target, book_id=resolved_book_id)
+        reviews = self.get_due_reviews(on_date=target, book_id=resolved_book_id, group_by_family=False)
         markdown = render_daily_log(date=target, records=records, reviews=reviews)
         default_output_dir = self.paths.exports_dir if self.paths else Path.cwd()
         path = write_daily_log(
@@ -1040,6 +1095,68 @@ class ReadMemoryService(MaintenanceMixin):
             """,
             (resolved_book_id, limit),
         )
+
+    def get_lesson(
+        self,
+        *,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        group_key: str,
+    ) -> dict[str, Any]:
+        """Return lesson content and context for a word family."""
+        resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
+        rows = self.store.fetchall(
+            """
+            SELECT * FROM vocabulary_notes
+            WHERE book_id = ? AND group_key = ?
+            ORDER BY created_at ASC
+            """,
+            (resolved_book_id, group_key),
+        )
+        if not rows:
+            return {"status": "not_found", "group_key": group_key}
+        first = rows[0]
+        return {
+            "status": "found",
+            "group_key": group_key,
+            "lemma": first.get("lemma"),
+            "book_id": resolved_book_id,
+            "words": [row["word"] for row in rows],
+            "lesson_content": first.get("lesson_content"),
+            "lesson_generated_at": first.get("lesson_generated_at"),
+            "source_sentences": [row.get("source_sentence") for row in rows if row.get("source_sentence")],
+            "meanings": [row.get("user_meaning") for row in rows if row.get("user_meaning")],
+            "ai_context_meanings": [row.get("ai_context_meaning") for row in rows if row.get("ai_context_meaning")],
+        }
+
+    def save_lesson(
+        self,
+        *,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        group_key: str,
+        lesson_content: str,
+    ) -> dict[str, Any]:
+        """Persist AI-generated lesson content for a word family."""
+        resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        self.store.execute(
+            """
+            UPDATE vocabulary_notes
+            SET lesson_content = ?, lesson_generated_at = ?, updated_at = ?
+            WHERE book_id = ? AND group_key = ?
+            """,
+            (lesson_content, now, now, resolved_book_id, group_key),
+        )
+        count = self.store.fetchone(
+            "SELECT COUNT(*) AS count FROM vocabulary_notes WHERE book_id = ? AND group_key = ?",
+            (resolved_book_id, group_key),
+        )
+        return {
+            "status": "saved",
+            "group_key": group_key,
+            "updated_count": int(count["count"] if count else 0),
+        }
 
     def backup(self, *, output_dir: Path | None = None) -> dict[str, Any]:
         if not self.paths:

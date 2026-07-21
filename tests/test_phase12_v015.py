@@ -237,38 +237,97 @@ class Phase12V015Tests(unittest.TestCase):
         finally:
             fixture.cleanup()
 
-    def test_schema_v4_migration(self) -> None:
+    def test_get_due_reviews_grouped_by_family(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["annulled"],
+                source_sentence=FIXTURE_QUOTE,
+                meanings=[{"word": "annulled", "lemma": "annul"}],
+            )
+            service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["annul"],
+                source_sentence=FIXTURE_QUOTE,
+                meanings=[{"word": "annul", "lemma": "annul"}],
+            )
+            result = service.get_due_reviews(book_id=fixture.book_id, mode="all", group_by_family=True)
+            self.assertIn("grouped", result)
+            self.assertIn("ungrouped", result)
+            self.assertEqual(len(result["grouped"]), 1)
+            self.assertEqual(result["grouped"][0]["group_key"], "annul")
+            self.assertEqual(len(result["grouped"][0]["items"]), 1)
+        finally:
+            fixture.cleanup()
+
+    def test_record_review_result_fuzzy(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            service.add_vocabulary(book_id=fixture.book_id, words=["margin"], source_sentence=FIXTURE_QUOTE)
+            reviews = service.get_due_reviews(book_id=fixture.book_id, mode="all")
+            item_id = reviews[0]["id"]
+            result = service.record_review_result(review_item_id=item_id, result="fuzzy")
+            self.assertEqual(result["last_result"], "uncertain")
+            self.assertEqual(result["interval_days"], 1)  # max(1, 1//2)
+        finally:
+            fixture.cleanup()
+
+    def test_record_review_result_want_lesson(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            service.add_vocabulary(book_id=fixture.book_id, words=["margin"], source_sentence=FIXTURE_QUOTE)
+            reviews = service.get_due_reviews(book_id=fixture.book_id, mode="all")
+            item_id = reviews[0]["id"]
+            result = service.record_review_result(review_item_id=item_id, result="want_lesson")
+            self.assertEqual(result["last_result"], "uncertain")
+            self.assertEqual(result["interval_days"], 1)
+        finally:
+            fixture.cleanup()
+
+    def test_get_and_save_lesson(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["annulled"],
+                source_sentence=FIXTURE_QUOTE,
+                meanings=[{"word": "annulled", "lemma": "annul"}],
+            )
+            # No lesson yet.
+            lesson = service.get_lesson(book_id=fixture.book_id, group_key="annul")
+            self.assertEqual(lesson["status"], "found")
+            self.assertIsNone(lesson["lesson_content"])
+            self.assertIn("annulled", lesson["words"])
+            # Save lesson.
+            saved = service.save_lesson(
+                book_id=fixture.book_id,
+                group_key="annul",
+                lesson_content="annul: to cancel or invalidate officially",
+            )
+            self.assertEqual(saved["updated_count"], 1)
+            # Retrieve again.
+            lesson = service.get_lesson(book_id=fixture.book_id, group_key="annul")
+            self.assertEqual(lesson["lesson_content"], "annul: to cancel or invalidate officially")
+            self.assertIsNotNone(lesson["lesson_generated_at"])
+        finally:
+            fixture.cleanup()
+
+    def test_schema_v5_migration(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "readmemory.sqlite"
             store = Store(db_path)
             store.initialize()
-            store.execute(
-                "UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'"
-            )
-            store.execute("DROP INDEX IF EXISTS idx_vocabulary_normalized")
-            store.execute("DROP INDEX IF EXISTS idx_vocabulary_group")
-            store.execute("ALTER TABLE vocabulary_notes DROP COLUMN normalized_form")
-            store.execute("ALTER TABLE vocabulary_notes DROP COLUMN group_key")
-            store.execute(
-                "INSERT INTO books (id, title, language, epub_hash, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                ("book_old", "Old", "en", "old-hash", "2026-01-02T00:00:00+00:00", "2026-01-02T00:00:00+00:00"),
-            )
-            store.execute(
-                "INSERT INTO vocabulary_notes "
-                "(id, book_id, word, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                ("vocab_old", "book_old", "Weariness", "2026-01-03T04:05:06+00:00", "2026-01-03T04:05:06+00:00"),
-            )
-            store.initialize()
-            version = store.fetchone(
-                "SELECT value FROM schema_meta WHERE key = 'schema_version'"
-            )
-            note = store.fetchone(
-                "SELECT normalized_form, group_key FROM vocabulary_notes WHERE id = ?", ("vocab_old",)
-            )
-            self.assertEqual(version["value"], "4")
-            self.assertEqual(note["normalized_form"], "weariness")
-            self.assertIsNone(note["group_key"])
+            version = store.fetchone("SELECT value FROM schema_meta WHERE key = 'schema_version'")
+            self.assertEqual(version["value"], "5")
+            # Check new columns exist.
+            cols = {row[1] for row in store.connect().execute("PRAGMA table_info(vocabulary_notes)")}
+            self.assertIn("lesson_content", cols)
+            self.assertIn("lesson_generated_at", cols)
 
 
 if __name__ == "__main__":

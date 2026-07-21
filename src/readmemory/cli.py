@@ -77,6 +77,7 @@ def build_parser() -> ArgumentParser:
     reviews.add_argument("--book-id", default=None)
     reviews.add_argument("--book-ref", default=None)
     reviews.add_argument("--mode", choices=["due", "upcoming", "all"], default="due")
+    reviews.add_argument("--grouped", action="store_true", help="group vocabulary by word family")
 
     add_word = subparsers.add_parser("add-word", help="save vocabulary with optional source context")
     add_word.add_argument("words", nargs="+")
@@ -102,6 +103,12 @@ def build_parser() -> ArgumentParser:
     sentences.add_argument("--book-id", default=None)
     sentences.add_argument("--book-ref", default=None)
     sentences.add_argument("--limit", type=int, default=100)
+
+    lesson = subparsers.add_parser("lesson", help="get or save AI lesson for a word family")
+    lesson.add_argument("--book-id", default=None)
+    lesson.add_argument("--book-ref", default=None)
+    lesson.add_argument("--group-key", required=True)
+    lesson.add_argument("--save", default=None, help="lesson content to save")
 
     add_sentence = subparsers.add_parser("add-sentence", help="save a sentence note")
     add_sentence.add_argument("sentence")
@@ -150,7 +157,7 @@ def build_parser() -> ArgumentParser:
 
     review_result = subparsers.add_parser("review-result")
     review_result.add_argument("--review-item-id", required=True)
-    review_result.add_argument("--result", required=True, choices=["correct", "wrong", "uncertain"])
+    review_result.add_argument("--result", required=True, choices=["correct", "wrong", "uncertain", "known", "fuzzy", "unknown", "want_lesson"])
     return parser
 
 
@@ -328,7 +335,26 @@ def _main(argv: list[str] | None = None) -> int:
             book_id=args.book_id,
             book_ref=args.book_ref,
             mode=args.mode,
+            group_by_family=args.grouped,
         )
+        _print(result, as_json=args.json_output)
+        return 0
+
+    if args.command == "lesson":
+        service = _make_service(args.config)
+        if args.save is not None:
+            result = service.save_lesson(
+                book_id=args.book_id,
+                book_ref=args.book_ref,
+                group_key=args.group_key,
+                lesson_content=args.save,
+            )
+        else:
+            result = service.get_lesson(
+                book_id=args.book_id,
+                book_ref=args.book_ref,
+                group_key=args.group_key,
+            )
         _print(result, as_json=args.json_output)
         return 0
 
