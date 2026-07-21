@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 
 SCHEMA_STATEMENTS = [
@@ -189,6 +189,45 @@ def _migrate_to_v3(conn: sqlite3.Connection) -> None:
             f"UPDATE {table} SET note_date = date(created_at) "
             "WHERE note_date IS NULL OR note_date = ''"
         )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vocabulary_book_date "
+        "ON vocabulary_notes(book_id, note_date)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sentences_book_date "
+        "ON sentence_notes(book_id, note_date)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_thoughts_book_date "
+        "ON thought_notes(book_id, note_date)"
+    )
+
+
+def _migrate_to_v4(conn: sqlite3.Connection) -> None:
+    from .words import normalize_word
+
+    if "normalized_form" not in _columns(conn, "vocabulary_notes"):
+        conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN normalized_form TEXT")
+    if "group_key" not in _columns(conn, "vocabulary_notes"):
+        conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN group_key TEXT")
+    rows = conn.execute(
+        "SELECT id, word, lemma FROM vocabulary_notes"
+    ).fetchall()
+    for row in rows:
+        normalized = normalize_word(str(row[1]))
+        group_key = (str(row[2]).strip().lower() if row[2] else None) or normalized
+        conn.execute(
+            "UPDATE vocabulary_notes SET normalized_form = ?, group_key = ? WHERE id = ?",
+            (normalized, group_key, str(row[0])),
+        )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vocabulary_normalized "
+        "ON vocabulary_notes(book_id, normalized_form)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_vocabulary_group "
+        "ON vocabulary_notes(book_id, group_key)"
+    )
 
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
@@ -198,6 +237,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         for statement in SCHEMA_STATEMENTS:
             conn.execute(statement)
         _migrate_to_v3(conn)
+        _migrate_to_v4(conn)
         conn.execute(
             "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
             ("schema_version", SCHEMA_VERSION),
@@ -206,4 +246,3 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
     except Exception:
         conn.rollback()
         raise
-

@@ -11,7 +11,12 @@ from .config import ReadMemorySettings
 from .epub_importer import parse_epub
 from .ids import new_id
 from .import_store import import_parsed_book
-from .markdown import render_daily_log, write_daily_log
+from .markdown import (
+    render_daily_log,
+    render_weekly_summary,
+    write_daily_log,
+    write_weekly_summary,
+)
 from .maintenance import MaintenanceMixin
 from .paths import ReadMemoryPaths
 from .repository import Repository, match_score, normalize_quote
@@ -113,10 +118,29 @@ class ReadMemoryService(MaintenanceMixin):
         book_ref: str | None = None,
     ) -> dict[str, Any]:
         resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
+        rows = self.repo.search_source_exact(book_id=resolved_book_id, quote=quote, limit=limit * 3)
+        # Filter out CSS/meta noise and prefer sentence-level matches.
+        cleaned = []
+        for row in rows:
+            text = str(row.get("text") or "")
+            # Skip obvious CSS / XML / metadata noise.
+            if "{" in text and "}" in text and ("font" in text.lower() or "margin" in text.lower() or "style" in text.lower()):
+                continue
+            if text.strip().startswith(("/*", "<!--", "<?xml", "<!DOCTYPE")):
+                continue
+            cleaned.append(row)
+        # Sort: sentence > paragraph > chapter, then by position.
+        unit_order = {"sentence": 0, "paragraph": 1, "chapter": 2}
+        cleaned.sort(key=lambda r: (
+            unit_order.get(str(r.get("unit_type") or "chapter"), 2),
+            r.get("chapter_index") or 0,
+            r.get("paragraph_index") or 0,
+            r.get("sentence_index") or 0,
+        ))
         return {
             "book_id": resolved_book_id,
             "quote": quote,
-            "matches": self.repo.search_source_exact(book_id=resolved_book_id, quote=quote, limit=limit),
+            "matches": cleaned[:limit],
         }
 
     def find_anchor(
@@ -308,33 +332,91 @@ class ReadMemoryService(MaintenanceMixin):
         source_sentence: str | None = None,
         user_meaning: str | None = None,
         ai_context_meaning: str | None = None,
+        meanings: list[dict[str, Any]] | None = None,
         anchor_id: str | None = None,
         book_ref: str | None = None,
         note_date: str | None = None,
-    ) -> list[dict[str, Any]]:
+        compact: bool = False,
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
         resolved_anchor_id = self._resolve_note_anchor(
             book_id=resolved_book_id,
             anchor_id=anchor_id,
             fallback_quote=source_sentence,
         )
+        # Per-word metadata map; keys are lowercased word forms.
+        # Each entry may include: lemma, meaning, meaning_zh, context.
+        from .words import normalize_word
+        meta_map: dict[str, dict[str, str]] = {}
+        if meanings:
+            for entry in meanings:
+                if not isinstance(entry, dict):
+                    continue
+                word_key = str(entry.get("word") or "").strip().lower()
+                if not word_key:
+                    continue
+                meta_map[word_key] = {
+                    key: str(value).strip()
+                    for key, value in entry.items()
+                    if key in {"lemma", "meaning", "meaning_zh", "context"} and value
+                }
+
         created: list[dict[str, Any]] = []
+        duplicates: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         for word in words:
+            normalized = normalize_word(word)
+            per_word = meta_map.get(word.strip().lower(), {})
+            # Agent-provided lemma wins; fall back to rule-based normalization.
+            lemma = per_word.get("lemma") or None
+            group_key = (lemma.lower() if lemma else normalized)
+
+            # Duplicate detection: same book + same group_key (same word family).
+            existing = self.store.fetchone(
+                "SELECT id, word, lemma, source_sentence, created_at FROM vocabulary_notes "
+                "WHERE book_id = ? AND group_key = ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (resolved_book_id, group_key),
+            )
+            if existing:
+                duplicates.append({
+                    "word": word,
+                    "existing_word": existing["word"],
+                    "existing_id": existing["id"],
+                    "group_key": group_key,
+                    "previous_source": existing.get("source_sentence"),
+                })
+                continue
+
             note = self.repo.create_vocabulary_note(
                 book_id=resolved_book_id,
                 anchor_id=resolved_anchor_id,
                 word=word,
                 note_date=note_date or date.today().isoformat(),
+                normalized_form=normalized,
+                lemma=lemma,
+                group_key=group_key,
             )
-            if source_sentence or user_meaning or ai_context_meaning:
+            final_user_meaning = per_word.get("meaning") or user_meaning
+            final_ai_meaning = per_word.get("context") or ai_context_meaning
+            final_zh = per_word.get("meaning_zh")
+            if source_sentence or final_user_meaning or final_ai_meaning or final_zh:
                 self.store.execute(
                     """
                     UPDATE vocabulary_notes
                     SET source_sentence = ?, user_meaning = ?, ai_context_meaning = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (source_sentence, user_meaning, ai_context_meaning, now, note["id"]),
+                    (source_sentence, final_user_meaning, final_ai_meaning, now, note["id"]),
+                )
+            if final_zh:
+                # Store Chinese meaning in user_meaning if empty, else append.
+                current = self.store.fetchone("SELECT user_meaning FROM vocabulary_notes WHERE id = ?", (note["id"],))
+                existing_zh = (current or {}).get("user_meaning") or ""
+                combined = f"{existing_zh} | {final_zh}" if existing_zh else final_zh
+                self.store.execute(
+                    "UPDATE vocabulary_notes SET user_meaning = ? WHERE id = ?",
+                    (combined, note["id"]),
                 )
             self.repo.create_review_item(
                 book_id=resolved_book_id,
@@ -345,7 +427,18 @@ class ReadMemoryService(MaintenanceMixin):
             saved = self.store.fetchone("SELECT * FROM vocabulary_notes WHERE id = ?", (note["id"],))
             self._record_action(action_type="create", entity_type="vocabulary", entity_id=note["id"], payload={})
             created.append(saved)
-        return created
+
+        if not compact:
+            # Legacy shape: plain list of created records (duplicates excluded).
+            return created
+        # Compact summary for chat-friendly output.
+        return {
+            "saved_count": len(created),
+            "duplicate_count": len(duplicates),
+            "words": [row["word"] for row in created],
+            "duplicates": duplicates,
+            "anchor_id": resolved_anchor_id,
+        }
 
     def add_sentence(
         self,
@@ -502,6 +595,22 @@ class ReadMemoryService(MaintenanceMixin):
             params,
         )
 
+    def _review_prompt(self, row: dict[str, Any]) -> str:
+        """Build a conversational review prompt for a review item."""
+        item_type = row.get("item_type")
+        title = row.get("title") or ""
+        context = row.get("context") or ""
+        book_title = row.get("book_title") or "the book"
+        if item_type == "vocabulary":
+            if context:
+                return f'In "{book_title}", what does "{title}" mean in: "{context[:80]}"?'
+            return f'What does "{title}" mean in "{book_title}"?'
+        if item_type == "sentence":
+            return f'Recall this sentence from "{book_title}": "{title[:80]}..." — can you say it or explain it?'
+        if item_type == "thought":
+            return f'What was your thought about "{context[:60] if context else title[:60]}" in "{book_title}"?'
+        return f'Review: "{title[:80]}" from "{book_title}"'
+
     def get_due_reviews(
         self,
         *,
@@ -525,7 +634,10 @@ class ReadMemoryService(MaintenanceMixin):
         elif mode == "upcoming":
             clauses.append("r.due_at > ?")
             params.append(target)
-        return self._review_rows(where=" AND ".join(clauses) or "1 = 1", params=tuple(params))
+        rows = self._review_rows(where=" AND ".join(clauses) or "1 = 1", params=tuple(params))
+        for row in rows:
+            row["prompt"] = self._review_prompt(row)
+        return rows
 
     def record_review_result(self, *, review_item_id: str, result: str) -> dict[str, Any]:
         review = self.store.fetchone("SELECT * FROM review_items WHERE id = ?", (review_item_id,))
@@ -581,6 +693,175 @@ class ReadMemoryService(MaintenanceMixin):
             filename_pattern=self.settings.markdown_filename_pattern,
         )
         return {"path": str(path), "markdown": markdown}
+
+    def get_weekly_summary(
+        self,
+        *,
+        on_date: str | None = None,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> dict[str, Any]:
+        target = date.fromisoformat(on_date) if on_date else date.today()
+        start = target - timedelta(days=target.weekday())
+        end = start + timedelta(days=6)
+        start_text = start.isoformat()
+        end_text = end.isoformat()
+        resolved_book_id = None
+        if book_id or book_ref:
+            resolved_book_id = self._book_id_from_ref(
+                book_id=book_id, book_ref=book_ref
+            )
+
+        books: dict[str, dict[str, Any]] = {}
+        days = {
+            (start + timedelta(days=offset)).isoformat(): {
+                "date": (start + timedelta(days=offset)).isoformat(),
+                "session_count": 0,
+                "words_read": 0,
+                "vocabulary_count": 0,
+                "sentence_count": 0,
+                "thought_count": 0,
+                "note_count": 0,
+                "activity_count": 0,
+            }
+            for offset in range(7)
+        }
+
+        session_rows = self._weekly_rows(
+            table="reading_sessions",
+            date_column="session_date",
+            start_date=start_text,
+            end_date=end_text,
+            book_id=resolved_book_id,
+            include_words=True,
+        )
+        note_specs = (
+            ("vocabulary_notes", "vocabulary_count"),
+            ("sentence_notes", "sentence_count"),
+            ("thought_notes", "thought_count"),
+        )
+        for row in session_rows:
+            book = self._weekly_book(books, row)
+            count = int(row["item_count"] or 0)
+            words = int(row["words_read"] or 0)
+            book["session_count"] += count
+            book["words_read"] += words
+            day = days[row["activity_date"]]
+            day["session_count"] += count
+            day["words_read"] += words
+
+        for table, count_key in note_specs:
+            rows = self._weekly_rows(
+                table=table,
+                date_column="note_date",
+                start_date=start_text,
+                end_date=end_text,
+                book_id=resolved_book_id,
+            )
+            for row in rows:
+                book = self._weekly_book(books, row)
+                count = int(row["item_count"] or 0)
+                book[count_key] += count
+                days[row["activity_date"]][count_key] += count
+
+        for day in days.values():
+            day["note_count"] = (
+                day["vocabulary_count"]
+                + day["sentence_count"]
+                + day["thought_count"]
+            )
+            day["activity_count"] = day["session_count"] + day["note_count"]
+
+        book_list = sorted(
+            books.values(),
+            key=lambda item: (item["words_read"], item["title"]),
+            reverse=True,
+        )
+        reading_days = sum(1 for day in days.values() if day["session_count"])
+        words_read = sum(book["words_read"] for book in book_list)
+        average_words = round(words_read / reading_days) if reading_days else 0
+        totals = {
+            "reading_days": reading_days,
+            "session_count": sum(book["session_count"] for book in book_list),
+            "words_read": words_read,
+            "average_words_per_reading_day": average_words,
+            "vocabulary_count": sum(book["vocabulary_count"] for book in book_list),
+            "sentence_count": sum(book["sentence_count"] for book in book_list),
+            "thought_count": sum(book["thought_count"] for book in book_list),
+        }
+        return {
+            "start_date": start_text,
+            "end_date": end_text,
+            "book_id": resolved_book_id,
+            "totals": totals,
+            "recommended_next_words": average_words,
+            "books": book_list,
+            "daily_activity": list(days.values()),
+        }
+
+    def generate_weekly_summary(
+        self,
+        *,
+        on_date: str | None = None,
+        output_dir: Path | None = None,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> dict[str, Any]:
+        summary = self.get_weekly_summary(
+            on_date=on_date, book_id=book_id, book_ref=book_ref
+        )
+        markdown = render_weekly_summary(summary=summary)
+        default_output_dir = self.paths.exports_dir if self.paths else Path.cwd()
+        path = write_weekly_summary(
+            output_dir=output_dir or default_output_dir,
+            start_date=summary["start_date"],
+            markdown=markdown,
+        )
+        return {"path": str(path), "markdown": markdown, "summary": summary}
+
+    def _weekly_rows(
+        self,
+        *,
+        table: str,
+        date_column: str,
+        start_date: str,
+        end_date: str,
+        book_id: str | None,
+        include_words: bool = False,
+    ) -> list[dict[str, Any]]:
+        words = ", SUM(item.words_read) AS words_read" if include_words else ""
+        book_clause = " AND item.book_id = ?" if book_id else ""
+        params: tuple[Any, ...] = (start_date, end_date)
+        if book_id:
+            params += (book_id,)
+        return self.store.fetchall(
+            f"""
+            SELECT item.{date_column} AS activity_date,
+                   item.book_id, book.title, COUNT(*) AS item_count{words}
+            FROM {table} item
+            JOIN books book ON book.id = item.book_id
+            WHERE item.{date_column} BETWEEN ? AND ?{book_clause}
+            GROUP BY item.{date_column}, item.book_id, book.title
+            ORDER BY item.{date_column}, book.title
+            """,
+            params,
+        )
+
+    def _weekly_book(
+        self, books: dict[str, dict[str, Any]], row: dict[str, Any]
+    ) -> dict[str, Any]:
+        book_id = str(row["book_id"])
+        if book_id not in books:
+            books[book_id] = {
+                "book_id": book_id,
+                "title": row["title"],
+                "session_count": 0,
+                "words_read": 0,
+                "vocabulary_count": 0,
+                "sentence_count": 0,
+                "thought_count": 0,
+            }
+        return books[book_id]
 
     def search_notes(
         self,
@@ -655,6 +936,107 @@ class ReadMemoryService(MaintenanceMixin):
                 pattern,
                 limit,
             ),
+        )
+
+    def get_reading_position(
+        self,
+        *,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> dict[str, Any]:
+        """Return the latest reading position for a book."""
+        resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
+        session = self.store.fetchone(
+            """
+            SELECT s.*, a.anchor_quote, a.source_unit_id
+            FROM reading_sessions s
+            LEFT JOIN anchors a ON a.id = s.end_anchor_id
+            WHERE s.book_id = ? AND s.end_anchor_id IS NOT NULL
+            ORDER BY s.session_date DESC, s.created_at DESC
+            LIMIT 1
+            """,
+            (resolved_book_id,),
+        )
+        if not session:
+            return {"status": "no_position", "book_id": resolved_book_id}
+
+        unit = self.store.fetchone(
+            "SELECT chapter_index, paragraph_index, sentence_index, text "
+            "FROM source_units WHERE id = ?",
+            (session.get("source_unit_id"),),
+        )
+        return {
+            "status": "found",
+            "book_id": resolved_book_id,
+            "session_date": session["session_date"],
+            "words_read": session["words_read"],
+            "anchor_quote": session.get("anchor_quote"),
+            "chapter_index": unit.get("chapter_index") if unit else None,
+            "paragraph_index": unit.get("paragraph_index") if unit else None,
+            "sentence_index": unit.get("sentence_index") if unit else None,
+            "source_text": unit.get("text") if unit else None,
+        }
+
+    def get_vocabulary(
+        self,
+        *,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        status: str | None = None,
+        group_by_lemma: bool = False,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List vocabulary notes for a book, optionally grouped by lemma."""
+        resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
+        where = "WHERE book_id = ?"
+        params: list[Any] = [resolved_book_id]
+        if status:
+            where += " AND status = ?"
+            params.append(status)
+        rows = self.store.fetchall(
+            f"""
+            SELECT * FROM vocabulary_notes
+            {where}
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        )
+        if not group_by_lemma:
+            return rows
+        # Group by group_key (word family) for review convenience.
+        groups: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            key = row.get("group_key") or row.get("normalized_form") or row["word"].lower()
+            if key not in groups:
+                groups[key] = {
+                    "group_key": key,
+                    "lemma": row.get("lemma"),
+                    "words": [],
+                    "count": 0,
+                    "latest_note": row,
+                }
+            groups[key]["words"].append(row["word"])
+            groups[key]["count"] += 1
+        return list(groups.values())
+
+    def get_sentences(
+        self,
+        *,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List saved sentence notes for a book."""
+        resolved_book_id = self._book_id_from_ref(book_id=book_id, book_ref=book_ref)
+        return self.store.fetchall(
+            """
+            SELECT * FROM sentence_notes
+            WHERE book_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (resolved_book_id, limit),
         )
 
     def backup(self, *, output_dir: Path | None = None) -> dict[str, Any]:

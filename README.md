@@ -91,6 +91,7 @@ readmemory edit thought ITEM_ID --set thought_text="revised thought"
 readmemory delete thought ITEM_ID --yes
 readmemory undo
 readmemory backup
+readmemory weekly-summary --date 2026-07-11
 ```
 
 For rough capture when the exact source quote cannot be resolved yet:
@@ -115,7 +116,6 @@ EPUB paths are resolved on the machine running `readmemory-mcp`. A file uploaded
 to a Hermes chat is not automatically available to the MCP server. Put the EPUB
 in a local directory readable by the MCP host, or download it to that host
 before calling `import_book`. ReadMemory does not automatically download remote EPUB URLs.
-
 
 If `~/.local/bin` is not on `PATH`, add it before running ReadMemory.
 
@@ -145,12 +145,22 @@ The MCP server exposes tools for full ReadMemory control:
 - `reconcile_item`, `edit_item`, `delete_item`, `undo_last`
 - `create_backup`
 - `get_due_reviews`, `record_review_result`, `generate_daily_log`
+- `get_weekly_summary`, `generate_weekly_summary`
 - `search_notes`, `get_unanchored_items`
 
 Hermes agent should start with `status` or book discovery when book identity is
 unclear, use `book_ref` for normal user-facing writes, and only use explicit
 unanchored capture when the user wants to save a rough record that needs later
 source reconciliation.
+
+Weekly summaries use Monday through Sunday and report reading days, sessions,
+words read, notes captured, per-book activity, and a next-session word target
+based on the average of active reading days:
+
+```bash
+readmemory weekly-summary
+readmemory weekly-summary --book-ref "partial title" --date 2026-07-11
+```
 
 ## Upgrade
 

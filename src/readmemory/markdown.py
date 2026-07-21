@@ -64,3 +64,61 @@ def write_daily_log(*, output_dir: Path, date: str, markdown: str, filename_patt
     path.write_text(markdown, encoding="utf-8")
     return path
 
+
+def render_weekly_summary(*, summary: dict[str, Any]) -> str:
+    totals = summary["totals"]
+    lines = [
+        f"# English Reading Weekly Summary - {summary['start_date']} to {summary['end_date']}",
+        "",
+        "## Overview",
+        "",
+        f"- Reading days: {totals['reading_days']}",
+        f"- Reading sessions: {totals['session_count']}",
+        f"- Words read: {totals['words_read']}",
+        f"- Average words per reading day: {totals['average_words_per_reading_day']}",
+        f"- Recommended next session target: {summary['recommended_next_words']} words",
+        "",
+        "## Notes Captured",
+        "",
+        f"- Vocabulary: {totals['vocabulary_count']}",
+        f"- Sentences: {totals['sentence_count']}",
+        f"- Thoughts: {totals['thought_count']}",
+        "",
+        "## Books",
+        "",
+    ]
+    if summary["books"]:
+        for book in summary["books"]:
+            lines.append(f"- {book['title']}")
+            lines.append(
+                f"  - {book['words_read']} words across {book['session_count']} sessions"
+            )
+            lines.append(
+                "  - Notes: "
+                f"{book['vocabulary_count']} vocabulary, "
+                f"{book['sentence_count']} sentences, "
+                f"{book['thought_count']} thoughts"
+            )
+    else:
+        lines.append("- No reading activity or notes recorded.")
+    lines.extend(["", "## Daily Activity", ""])
+    active_days = [day for day in summary["daily_activity"] if day["activity_count"]]
+    if active_days:
+        for day in active_days:
+            lines.append(
+                f"- {day['date']}: {day['words_read']} words, "
+                f"{day['session_count']} sessions, {day['note_count']} notes"
+            )
+    else:
+        lines.append("- No activity recorded this week.")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_weekly_summary(
+    *, output_dir: Path, start_date: str, markdown: str
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / f"{start_date}-weekly-summary.md"
+    path.write_text(markdown, encoding="utf-8")
+    return path

@@ -1,3 +1,36 @@
+# v 0.1.5
+
+## Summary
+
+ReadMemory v0.1.5 adds grounded weekly reading statistics and pace guidance.
+
+## Implemented
+
+- Added Monday-to-Sunday summaries for reading days, sessions, and words read.
+- Added vocabulary, sentence, and thought counts by week and by book.
+- Added per-day activity breakdowns and book filtering.
+- Added a next-session word target based on average words per active reading day.
+- Added CLI `weekly-summary` and MCP `get_weekly_summary` / `generate_weekly_summary`.
+- Added idempotent Markdown weekly summary export.
+
+# v 0.1.5-dev (humanization improvements)
+
+## Summary
+
+Ongoing improvements for more human-friendly agent/CLI interaction.
+
+## Implemented
+
+- `add_vocabulary` returns a compact summary by default (saved_count, words list, anchor_id); `--verbose` / `compact=False` returns full records.
+- Per-word metadata support in `add_vocabulary`: pass `meanings=[{word, lemma, meaning, meaning_zh, context}]` to set lemma, English meaning, Chinese meaning, and context per word.
+- Word-family grouping: `lemma` (agent-provided) or `normalized_form` (rule-based fallback) is used as `group_key` for duplicate detection and review grouping. Same word family (e.g. "annulled" / "annul") is detected as duplicate.
+- New `get_reading_position(book_ref)`: returns latest chapter/paragraph/quote for "where did I stop?".
+- New `get_vocabulary(book_ref, status, group_by_lemma)`: list vocabulary, optionally grouped by word family.
+- New `get_sentences(book_ref)`: list saved sentence notes.
+- `get_due_reviews` now includes a conversational `prompt` field (e.g. "In 'Animal Farm', what does 'knacker' mean in: ...?").
+- `search_source` filters CSS/meta noise and prefers sentence-level matches over chapter dumps.
+- Schema v4: added `normalized_form` and `group_key` to `vocabulary_notes` with migration and indexes.
+
 # v 0.1.4
 
 ## Summary

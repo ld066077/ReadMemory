@@ -119,9 +119,18 @@ def main(argv: list[str] | None = None) -> int:
         source_sentence: str | None = None,
         user_meaning: str | None = None,
         ai_context_meaning: str | None = None,
+        meanings: list[dict] | None = None,
         anchor_id: str | None = None,
         note_date: str | None = None,
-    ) -> list[dict]:
+        compact: bool = True,
+    ) -> dict:
+        """Save vocabulary words. Returns a compact summary by default.
+
+        For per-word metadata (lemma, meaning, meaning_zh, context), pass
+        meanings as a list of dicts: [{"word": "...", "lemma": "...",
+        "meaning": "...", "meaning_zh": "...", "context": "..."}].
+        Lemma is used to group word families (e.g. "annulled" -> "annul").
+        """
         return service.add_vocabulary(
             book_id=book_id,
             book_ref=book_ref,
@@ -129,9 +138,45 @@ def main(argv: list[str] | None = None) -> int:
             source_sentence=source_sentence,
             user_meaning=user_meaning,
             ai_context_meaning=ai_context_meaning,
+            meanings=meanings,
             anchor_id=anchor_id,
             note_date=note_date,
+            compact=compact,
         )
+
+    @app.tool()
+    def get_reading_position(
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> dict:
+        """Return the latest reading position (chapter/paragraph/quote)."""
+        return service.get_reading_position(book_id=book_id, book_ref=book_ref)
+
+    @app.tool()
+    def get_vocabulary(
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        status: str | None = None,
+        group_by_lemma: bool = False,
+        limit: int = 100,
+    ) -> list[dict]:
+        """List vocabulary notes for a book, optionally grouped by lemma."""
+        return service.get_vocabulary(
+            book_id=book_id,
+            book_ref=book_ref,
+            status=status,
+            group_by_lemma=group_by_lemma,
+            limit=limit,
+        )
+
+    @app.tool()
+    def get_sentences(
+        book_id: str | None = None,
+        book_ref: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """List saved sentence notes for a book."""
+        return service.get_sentences(book_id=book_id, book_ref=book_ref, limit=limit)
 
     @app.tool()
     def add_sentence(
@@ -195,6 +240,28 @@ def main(argv: list[str] | None = None) -> int:
         on_date: str | None = None,
     ) -> dict:
         return service.generate_daily_log(book_id=book_id, book_ref=book_ref, on_date=on_date)
+
+    @app.tool()
+    def get_weekly_summary(
+        on_date: str | None = None,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> dict:
+        """Return grounded reading and note statistics for the selected week."""
+        return service.get_weekly_summary(
+            on_date=on_date, book_id=book_id, book_ref=book_ref
+        )
+
+    @app.tool()
+    def generate_weekly_summary(
+        on_date: str | None = None,
+        book_id: str | None = None,
+        book_ref: str | None = None,
+    ) -> dict:
+        """Write a Markdown weekly reading summary and return its statistics."""
+        return service.generate_weekly_summary(
+            on_date=on_date, book_id=book_id, book_ref=book_ref
+        )
 
     @app.tool()
     def search_notes(

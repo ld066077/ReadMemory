@@ -20,6 +20,8 @@ class Phase11V014Tests(unittest.TestCase):
             store.execute(
                 "UPDATE schema_meta SET value = '2' WHERE key = 'schema_version'"
             )
+            store.execute("DROP INDEX idx_vocabulary_book_date")
+            store.execute("ALTER TABLE vocabulary_notes DROP COLUMN note_date")
             store.execute(
                 "INSERT INTO books (id, title, language, epub_hash, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
@@ -27,7 +29,7 @@ class Phase11V014Tests(unittest.TestCase):
             )
             store.execute(
                 "INSERT INTO vocabulary_notes "
-                "(id, book_id, word, note_date, created_at, updated_at) VALUES (?, ?, ?, NULL, ?, ?)",
+                "(id, book_id, word, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 ("vocab_old", "book_old", "old", "2026-01-03T04:05:06+00:00", "2026-01-03T04:05:06+00:00"),
             )
             store.initialize()
@@ -37,7 +39,7 @@ class Phase11V014Tests(unittest.TestCase):
             note = store.fetchone(
                 "SELECT note_date FROM vocabulary_notes WHERE id = ?", ("vocab_old",)
             )
-            self.assertEqual(version["value"], "3")
+            self.assertEqual(version["value"], "4")
             self.assertEqual(note["note_date"], "2026-01-03")
 
     def test_explicit_note_date_appears_in_matching_daily_log(self) -> None:
@@ -152,7 +154,31 @@ class Phase11V014Tests(unittest.TestCase):
             try:
                 self.assertEqual(
                     conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0],
-                    "3",
+                    "4",
                 )
             finally:
                 conn.close()
+
+    def test_same_second_backups_do_not_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = ReadMemoryPaths(
+                config_dir=root / "config",
+                config_path=root / "config" / "readmemory.toml",
+                data_dir=root / "data",
+                db_path=root / "data" / "readmemory.sqlite",
+                books_dir=root / "data" / "books",
+                exports_dir=root / "data" / "exports",
+                logs_dir=root / "data" / "logs",
+            )
+            paths.ensure()
+            store = Store(paths.db_path)
+            store.initialize()
+            service = ReadMemoryService(store, paths=paths)
+
+            first = Path(service.backup(output_dir=root / "backups")["path"])
+            second = Path(service.backup(output_dir=root / "backups")["path"])
+
+            self.assertNotEqual(first, second)
+            self.assertTrue(first.exists())
+            self.assertTrue(second.exists())

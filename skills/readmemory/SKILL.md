@@ -49,6 +49,8 @@ Hermes agent may expose these as MCP-prefixed tool names such as
 - `get_due_reviews`
 - `record_review_result`
 - `generate_daily_log`
+- `get_weekly_summary`
+- `generate_weekly_summary`
 - `reconcile_item`
 - `edit_item`
 - `delete_item`
@@ -136,6 +138,17 @@ When the user asks for today's reading log, a daily summary, or Markdown export:
 2. Call `generate_daily_log` with `book_ref` and date if available.
 3. Report the generated path and a compact summary.
 4. Do not fabricate a daily log if ReadMemory has no records for that day.
+
+### Weekly Reading Summary
+
+When the user asks how much they read this week, for a weekly recap, or what
+their next reading target should be:
+
+1. Call `get_weekly_summary`, with `book_ref` when the request is book-specific.
+2. Treat weeks as Monday through Sunday and mention the returned date range.
+3. Ground every statistic in the returned counts; do not infer missing reading.
+4. Use `generate_weekly_summary` when the user wants a Markdown file.
+5. Present `recommended_next_words` as a pace-based suggestion, not a requirement.
 
 ### Importing Books
 

@@ -64,6 +64,14 @@ def build_parser() -> ArgumentParser:
     daily_log.add_argument("--date", default=None)
     daily_log.add_argument("--output-dir", type=Path, default=None)
 
+    weekly_summary = subparsers.add_parser(
+        "weekly-summary", help="generate a weekly reading summary"
+    )
+    weekly_summary.add_argument("--book-id", default=None)
+    weekly_summary.add_argument("--book-ref", default=None)
+    weekly_summary.add_argument("--date", default=None)
+    weekly_summary.add_argument("--output-dir", type=Path, default=None)
+
     reviews = subparsers.add_parser("reviews")
     reviews.add_argument("--date", default=None)
     reviews.add_argument("--book-id", default=None)
@@ -77,6 +85,23 @@ def build_parser() -> ArgumentParser:
     add_word.add_argument("--date", dest="note_date", default=None)
     add_word.add_argument("--source-sentence", default=None)
     add_word.add_argument("--meaning", default=None)
+    add_word.add_argument("--verbose", action="store_true", help="return full records instead of compact summary")
+
+    position = subparsers.add_parser("position", help="show latest reading position for a book")
+    position.add_argument("--book-id", default=None)
+    position.add_argument("--book-ref", default=None)
+
+    vocab = subparsers.add_parser("vocabulary", help="list vocabulary notes for a book")
+    vocab.add_argument("--book-id", default=None)
+    vocab.add_argument("--book-ref", default=None)
+    vocab.add_argument("--status", default=None)
+    vocab.add_argument("--group-by-lemma", action="store_true")
+    vocab.add_argument("--limit", type=int, default=100)
+
+    sentences = subparsers.add_parser("sentences", help="list saved sentence notes for a book")
+    sentences.add_argument("--book-id", default=None)
+    sentences.add_argument("--book-ref", default=None)
+    sentences.add_argument("--limit", type=int, default=100)
 
     add_sentence = subparsers.add_parser("add-sentence", help="save a sentence note")
     add_sentence.add_argument("sentence")
@@ -279,6 +304,16 @@ def _main(argv: list[str] | None = None) -> int:
 
     if args.command == "daily-log":
         result = _make_service(args.config).generate_daily_log(
+            book_id=args.book_id,
+            book_ref=args.book_ref,
+            on_date=args.date,
+            output_dir=args.output_dir,
+        )
+        _print(result, as_json=args.json_output)
+        return 0
+
+    if args.command == "weekly-summary":
+        result = _make_service(args.config).generate_weekly_summary(
             book_id=args.book_id,
             book_ref=args.book_ref,
             on_date=args.date,

@@ -193,15 +193,15 @@ class Repository:
             None,
         )
 
-    def create_vocabulary_note(self, *, book_id: str, anchor_id: str | None, word: str, note_date: str | None = None) -> dict[str, Any]:
+    def create_vocabulary_note(self, *, book_id: str, anchor_id: str | None, word: str, note_date: str | None = None, normalized_form: str | None = None, lemma: str | None = None, group_key: str | None = None) -> dict[str, Any]:
         item_id = new_id("vocab")
         now = utc_now()
         self.store.execute(
             """
-            INSERT INTO vocabulary_notes (id, book_id, anchor_id, word, note_date, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO vocabulary_notes (id, book_id, anchor_id, word, lemma, normalized_form, group_key, note_date, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (item_id, book_id, anchor_id, word, note_date, now, now),
+            (item_id, book_id, anchor_id, word, lemma, normalized_form, group_key, note_date, now, now),
         )
         return self.store.fetchone("SELECT * FROM vocabulary_notes WHERE id = ?", (item_id,))
 

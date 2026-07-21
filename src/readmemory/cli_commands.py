@@ -12,6 +12,26 @@ def dispatch_extra(args: Any, service: Any) -> tuple[bool, object | None]:
             source_sentence=args.source_sentence,
             note_date=args.note_date,
             user_meaning=args.meaning,
+            compact=not getattr(args, "verbose", False),
+        )
+    if args.command == "position":
+        return True, service.get_reading_position(
+            book_id=args.book_id,
+            book_ref=args.book_ref,
+        )
+    if args.command == "vocabulary":
+        return True, service.get_vocabulary(
+            book_id=args.book_id,
+            book_ref=args.book_ref,
+            status=args.status,
+            group_by_lemma=args.group_by_lemma,
+            limit=args.limit,
+        )
+    if args.command == "sentences":
+        return True, service.get_sentences(
+            book_id=args.book_id,
+            book_ref=args.book_ref,
+            limit=args.limit,
         )
     if args.command == "add-sentence":
         return True, service.add_sentence(

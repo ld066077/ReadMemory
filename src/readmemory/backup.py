@@ -14,7 +14,7 @@ def create_backup(*, paths: Any, output_dir: Path | None = None) -> dict[str, An
     target_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now(timezone.utc).replace(microsecond=0)
     filename = f"readmemory-backup-{timestamp.strftime('%Y%m%dT%H%M%SZ')}.zip"
-    target = target_dir / filename
+    target = _available_target(target_dir / filename)
 
     with TemporaryDirectory() as tmp:
         snapshot = Path(tmp) / "readmemory.sqlite"
@@ -60,3 +60,14 @@ def _add_tree(archive: ZipFile, source: Path, prefix: str) -> None:
     for path in sorted(source.rglob("*")):
         if path.is_file():
             archive.write(path, str(Path(prefix) / path.relative_to(source)))
+
+
+def _available_target(target: Path) -> Path:
+    if not target.exists():
+        return target
+    counter = 2
+    while True:
+        candidate = target.with_name(f"{target.stem}-{counter}{target.suffix}")
+        if not candidate.exists():
+            return candidate
+        counter += 1
