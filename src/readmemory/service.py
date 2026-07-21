@@ -324,6 +324,62 @@ class ReadMemoryService(MaintenanceMixin):
     def _create_review_due_at(self, *, days: int) -> str:
         return (datetime.now(timezone.utc) + timedelta(days=days)).replace(microsecond=0).isoformat()
 
+    def _find_sentence_in_range(
+        self,
+        *,
+        book_id: str,
+        word: str,
+        anchor_id: str | None,
+    ) -> str | None:
+        """Find the sentence containing word within the reading range.
+
+        The range is defined as: previous anchor's source_unit_id .. current anchor's source_unit_id.
+        If no anchor is given, return None (caller should fall back).
+        """
+        if not anchor_id:
+            return None
+        # Get current anchor's source_unit_id
+        current = self.store.fetchone(
+            "SELECT source_unit_id FROM anchors WHERE id = ? AND book_id = ?",
+            (anchor_id, book_id),
+        )
+        if not current or not current.get("source_unit_id"):
+            return None
+        end_unit = current["source_unit_id"]
+
+        # Get previous anchor (the one with the largest source_unit_id < current)
+        previous = self.store.fetchone(
+            "SELECT source_unit_id FROM anchors WHERE book_id = ? AND source_unit_id < ? ORDER BY source_unit_id DESC LIMIT 1",
+            (book_id, end_unit),
+        )
+        start_unit = previous["source_unit_id"] if previous else ""
+
+        # Search sentences in range [start_unit, end_unit] containing the word.
+        # Since unit ids are hashes, use (chapter, paragraph, sentence) ordering
+        # and find positions by matching ids.
+        all_sentences = self.store.fetchall(
+            """
+            SELECT id, text FROM source_units
+            WHERE book_id = ? AND unit_type = 'sentence'
+            ORDER BY chapter_index, paragraph_index, sentence_index
+            """,
+            (book_id,),
+        )
+        start_pos = 0
+        end_pos = len(all_sentences)
+        for i, s in enumerate(all_sentences):
+            if s["id"] == start_unit:
+                start_pos = i
+            if s["id"] == end_unit:
+                end_pos = i + 1
+                break
+        word_lower = word.lower()
+        for s in all_sentences[start_pos:end_pos]:
+            text = s.get("text") or ""
+            if word_lower in text.lower():
+                return text
+        return None
+
     def add_vocabulary(
         self,
         *,
@@ -402,14 +458,22 @@ class ReadMemoryService(MaintenanceMixin):
             final_user_meaning = per_word.get("meaning") or user_meaning
             final_ai_meaning = per_word.get("context") or ai_context_meaning
             final_zh = per_word.get("meaning_zh")
-            if source_sentence or final_user_meaning or final_ai_meaning or final_zh:
+            # Auto-resolve source_sentence from reading range when anchor is given.
+            final_source = source_sentence
+            if not final_source and resolved_anchor_id:
+                final_source = self._find_sentence_in_range(
+                    book_id=resolved_book_id,
+                    word=word,
+                    anchor_id=resolved_anchor_id,
+                )
+            if final_source or final_user_meaning or final_ai_meaning or final_zh:
                 self.store.execute(
                     """
                     UPDATE vocabulary_notes
                     SET source_sentence = ?, user_meaning = ?, ai_context_meaning = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (source_sentence, final_user_meaning, final_ai_meaning, now, note["id"]),
+                    (final_source, final_user_meaning, final_ai_meaning, now, note["id"]),
                 )
             if final_zh:
                 # Store Chinese meaning in user_meaning if empty, else append.

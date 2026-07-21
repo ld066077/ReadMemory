@@ -347,6 +347,71 @@ class Phase12V015Tests(unittest.TestCase):
             self.assertIn("lesson_content", cols)
             self.assertIn("lesson_generated_at", cols)
 
+    def test_find_sentence_in_range_with_anchor(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            store = service.store
+            # Get real unit ids from the fixture.
+            units = store.fetchall(
+                "SELECT id, text FROM source_units WHERE book_id = ? AND unit_type = 'sentence' ORDER BY id LIMIT 3",
+                (fixture.book_id,),
+            )
+            self.assertGreaterEqual(len(units), 3)
+            # Anchor 1: first unit
+            store.execute(
+                "INSERT INTO anchors (id, book_id, source_unit_id, anchor_quote, confidence, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("anchor_early", fixture.book_id, units[0]["id"], "The margin", 1.0,
+                 "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+            )
+            # Anchor 2: third unit
+            store.execute(
+                "INSERT INTO anchors (id, book_id, source_unit_id, anchor_quote, confidence, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("anchor_late", fixture.book_id, units[2]["id"], "Source text", 1.0,
+                 "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+            )
+            # "Source text" is in unit 3; range from anchor_early to anchor_late
+            found = service._find_sentence_in_range(
+                book_id=fixture.book_id,
+                word="Source text",
+                anchor_id="anchor_late",
+            )
+            self.assertIsNotNone(found)
+            self.assertIn("Source text", found)
+        finally:
+            fixture.cleanup()
+
+    def test_add_vocabulary_auto_finds_sentence_in_range(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            store = service.store
+            # Get a real unit id.
+            unit = store.fetchone(
+                "SELECT id FROM source_units WHERE book_id = ? AND unit_type = 'sentence' ORDER BY id LIMIT 1",
+                (fixture.book_id,),
+            )
+            self.assertIsNotNone(unit)
+            # Create anchor at that unit
+            store.execute(
+                "INSERT INTO anchors (id, book_id, source_unit_id, anchor_quote, confidence, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("anchor_test", fixture.book_id, unit["id"], "The margin", 1.0,
+                 "2026-01-01T00:00:00+00:00", "2026-01-01T00:00:00+00:00"),
+            )
+            # Add vocabulary without source_sentence; should auto-find in range.
+            result = service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["margin"],
+                anchor_id="anchor_test",
+            )
+            self.assertEqual(len(result), 1)
+            self.assertIn("margin", result[0]["source_sentence"])
+        finally:
+            fixture.cleanup()
+
 
 if __name__ == "__main__":
     unittest.main()
