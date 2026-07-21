@@ -260,6 +260,11 @@ def main(argv: list[str] | None = None) -> int:
         return service.record_review_result(review_item_id=review_item_id, result=result)
 
     @app.tool()
+    def batch_record_review_results(results: list[dict]) -> dict:
+        """Record multiple review results at once. Each entry: {review_item_id, result}."""
+        return service.batch_record_review_results(results=results)
+
+    @app.tool()
     def generate_daily_log(
         book_id: str | None = None,
         book_ref: str | None = None,

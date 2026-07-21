@@ -602,14 +602,18 @@ class ReadMemoryService(MaintenanceMixin):
         )
 
     def _review_prompt(self, row: dict[str, Any]) -> str:
-        """Build a conversational review prompt for a review item."""
+        """Build a cloze-deletion review prompt for a review item."""
         item_type = row.get("item_type")
         title = row.get("title") or ""
         context = row.get("context") or ""
         book_title = row.get("book_title") or "the book"
         if item_type == "vocabulary":
             if context:
-                return f'In "{book_title}", what does "{title}" mean in: "{context[:80]}"?'
+                # Create cloze: replace the word (case-insensitive) with ______
+                import re
+                pattern = re.compile(re.escape(title), re.IGNORECASE)
+                cloze = pattern.sub("______", context, count=1)
+                return f'"{cloze}"\n— {book_title}'
             return f'What does "{title}" mean in "{book_title}"?'
         if item_type == "sentence":
             return f'Recall this sentence from "{book_title}": "{title[:80]}..." — can you say it or explain it?'
@@ -728,6 +732,31 @@ class ReadMemoryService(MaintenanceMixin):
             ),
         )
         return self.store.fetchone("SELECT * FROM review_items WHERE id = ?", (review_item_id,))
+
+    def batch_record_review_results(
+        self,
+        *,
+        results: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        """Record multiple review results at once.
+
+        Each entry in results should have review_item_id and result.
+        Returns summary with counts.
+        """
+        recorded: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for entry in results:
+            rid = entry.get("review_item_id") or ""
+            res = entry.get("result", "uncertain")
+            try:
+                recorded.append(self.record_review_result(review_item_id=rid, result=res))
+            except KeyError:
+                errors.append(rid or "missing_id")
+        return {
+            "recorded": len(recorded),
+            "errors": errors,
+            "items": recorded,
+        }
 
     def generate_daily_log(
         self,

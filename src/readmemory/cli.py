@@ -158,6 +158,9 @@ def build_parser() -> ArgumentParser:
     review_result = subparsers.add_parser("review-result")
     review_result.add_argument("--review-item-id", required=True)
     review_result.add_argument("--result", required=True, choices=["correct", "wrong", "uncertain", "known", "fuzzy", "unknown", "want_lesson"])
+
+    batch_review = subparsers.add_parser("batch-review", help="record multiple review results from JSON")
+    batch_review.add_argument("--json-input", required=True, help="JSON list of {review_item_id, result}")
     return parser
 
 
@@ -368,6 +371,13 @@ def _main(argv: list[str] | None = None) -> int:
             review_item_id=args.review_item_id,
             result=args.result,
         )
+        _print(result, as_json=args.json_output)
+        return 0
+
+    if args.command == "batch-review":
+        import json as _json
+        results = _json.loads(args.json_input)
+        result = _make_service(args.config).batch_record_review_results(results=results)
         _print(result, as_json=args.json_output)
         return 0
 

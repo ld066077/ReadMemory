@@ -208,16 +208,34 @@ class Phase12V015Tests(unittest.TestCase):
         fixture = ImportedFixture()
         try:
             service = fixture.service
-            service.add_vocabulary(
-                book_id=fixture.book_id,
-                words=["margin"],
-                source_sentence=FIXTURE_QUOTE,
-            )
-            # mode='all' returns all reviews regardless of due date.
+            service.add_vocabulary(book_id=fixture.book_id, words=["margin"], source_sentence=FIXTURE_QUOTE)
             reviews = service.get_due_reviews(book_id=fixture.book_id, mode="all")
             self.assertGreater(len(reviews), 0)
             self.assertIn("prompt", reviews[0])
-            self.assertIn("margin", reviews[0]["prompt"])
+            # Cloze format: word replaced with ______
+            self.assertIn("______", reviews[0]["prompt"])
+        finally:
+            fixture.cleanup()
+
+    def test_batch_record_review_results(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["margin", "weariness"],
+                source_sentence=FIXTURE_QUOTE,
+            )
+            reviews = service.get_due_reviews(book_id=fixture.book_id, mode="all")
+            self.assertEqual(len(reviews), 2)
+            results = [
+                {"review_item_id": reviews[0]["id"], "result": "known"},
+                {"review_item_id": reviews[1]["id"], "result": "fuzzy"},
+                {"review_item_id": "fake_id", "result": "known"},
+            ]
+            outcome = service.batch_record_review_results(results=results)
+            self.assertEqual(outcome["recorded"], 2)
+            self.assertEqual(outcome["errors"], ["fake_id"])
         finally:
             fixture.cleanup()
 
