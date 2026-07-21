@@ -13,7 +13,7 @@ class MaintenanceMixin:
             "session": ("reading_sessions", {"session_date", "user_note", "status"}),
             "vocabulary": (
                 "vocabulary_notes",
-                {"word", "source_sentence", "user_meaning", "ai_context_meaning", "note_date"},
+                {"word", "lemma", "source_sentence", "user_meaning", "ai_context_meaning", "note_date"},
             ),
             "sentence": (
                 "sentence_notes",
@@ -38,8 +38,18 @@ class MaintenanceMixin:
             raise KeyError(item_id)
         previous = {key: current.get(key) for key in changes}
         assignments = ", ".join(f"{key} = ?" for key in changes)
-        params = tuple(changes.values()) + (self._now(), item_id)
-        self.store.execute(f"UPDATE {table} SET {assignments}, updated_at = ? WHERE id = ?", params)
+        params = list(changes.values())
+
+        # Sync group_key when lemma changes on vocabulary notes.
+        if entity_type == "vocabulary" and "lemma" in changes:
+            new_lemma = changes["lemma"]
+            group_key = new_lemma.strip().lower() if new_lemma else None
+            assignments += ", group_key = ?"
+            params.append(group_key)
+            previous["group_key"] = current.get("group_key")
+
+        params.extend([self._now(), item_id])
+        self.store.execute(f"UPDATE {table} SET {assignments}, updated_at = ? WHERE id = ?", tuple(params))
         self._record_action(
             action_type="edit",
             entity_type=entity_type,

@@ -215,7 +215,8 @@ def _migrate_to_v4(conn: sqlite3.Connection) -> None:
     ).fetchall()
     for row in rows:
         normalized = normalize_word(str(row[1]))
-        group_key = (str(row[2]).strip().lower() if row[2] else None) or normalized
+        # group_key comes ONLY from agent-provided lemma; NULL when absent.
+        group_key = str(row[2]).strip().lower() if row[2] else None
         conn.execute(
             "UPDATE vocabulary_notes SET normalized_form = ?, group_key = ? WHERE id = ?",
             (normalized, group_key, str(row[0])),

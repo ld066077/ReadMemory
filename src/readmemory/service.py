@@ -367,17 +367,19 @@ class ReadMemoryService(MaintenanceMixin):
         for word in words:
             normalized = normalize_word(word)
             per_word = meta_map.get(word.strip().lower(), {})
-            # Agent-provided lemma wins; fall back to rule-based normalization.
+            # Agent-provided lemma is the ONLY grouping key; NULL when absent.
             lemma = per_word.get("lemma") or None
-            group_key = (lemma.lower() if lemma else normalized)
+            group_key = lemma.lower() if lemma else None
 
-            # Duplicate detection: same book + same group_key (same word family).
-            existing = self.store.fetchone(
-                "SELECT id, word, lemma, source_sentence, created_at FROM vocabulary_notes "
-                "WHERE book_id = ? AND group_key = ? "
-                "ORDER BY created_at DESC LIMIT 1",
-                (resolved_book_id, group_key),
-            )
+            # Duplicate detection: same book + same group_key (only when lemma provided).
+            existing = None
+            if group_key:
+                existing = self.store.fetchone(
+                    "SELECT id, word, lemma, source_sentence, created_at FROM vocabulary_notes "
+                    "WHERE book_id = ? AND group_key = ? "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (resolved_book_id, group_key),
+                )
             if existing:
                 duplicates.append({
                     "word": word,
@@ -1004,10 +1006,10 @@ class ReadMemoryService(MaintenanceMixin):
         )
         if not group_by_lemma:
             return rows
-        # Group by group_key (word family) for review convenience.
+        # Group by group_key (agent-provided lemma); ungrouped words fall back to word itself.
         groups: dict[str, dict[str, Any]] = {}
         for row in rows:
-            key = row.get("group_key") or row.get("normalized_form") or row["word"].lower()
+            key = row.get("group_key") or row["word"].lower()
             if key not in groups:
                 groups[key] = {
                     "group_key": key,

@@ -10,20 +10,13 @@ from readmemory.words import normalize_word
 
 class Phase12V015Tests(unittest.TestCase):
     def test_normalize_word_basic(self) -> None:
+        # normalize_word only lowercases and strips punctuation; no suffix rules.
         self.assertEqual(normalize_word("weariness"), "weariness")
         self.assertEqual(normalize_word("Weariness"), "weariness")
-        self.assertEqual(normalize_word("triumphs"), "triumph")
-        self.assertEqual(normalize_word("annulled"), "annul")
-        self.assertEqual(normalize_word("stories"), "story")
-        self.assertEqual(normalize_word("carried"), "carry")
-        self.assertEqual(normalize_word("making"), "make")
-        self.assertEqual(normalize_word("hoped"), "hope")
-        self.assertEqual(normalize_word("stopped"), "stop")
-        self.assertEqual(normalize_word("consciously"), "conscious")
-        self.assertEqual(normalize_word("melancholy"), "melancholy")  # not an adverb
-        self.assertEqual(normalize_word("bias"), "bias")  # protected -is
-        self.assertEqual(normalize_word("cats"), "cat")
-        self.assertEqual(normalize_word("matches"), "match")
+        self.assertEqual(normalize_word("triumphs"), "triumphs")
+        self.assertEqual(normalize_word("annulled"), "annulled")
+        self.assertEqual(normalize_word("Doomed"), "doomed")
+        self.assertEqual(normalize_word("don't"), "don't")
 
     def test_add_vocabulary_compact_summary(self) -> None:
         fixture = ImportedFixture()
@@ -46,18 +39,21 @@ class Phase12V015Tests(unittest.TestCase):
         fixture = ImportedFixture()
         try:
             service = fixture.service
+            # First save WITH lemma so group_key is set.
             first = service.add_vocabulary(
                 book_id=fixture.book_id,
                 words=["margin"],
                 source_sentence=FIXTURE_QUOTE,
+                meanings=[{"word": "margin", "lemma": "margin"}],
                 compact=True,
             )
             self.assertEqual(first["saved_count"], 1)
-            # Same word again should be detected as duplicate.
+            # Same lemma via different case should be detected as duplicate.
             second = service.add_vocabulary(
                 book_id=fixture.book_id,
-                words=["Margin"],  # different case
+                words=["Margin"],
                 source_sentence=FIXTURE_QUOTE,
+                meanings=[{"word": "Margin", "lemma": "margin"}],
                 compact=True,
             )
             self.assertEqual(second["saved_count"], 0)
@@ -89,6 +85,51 @@ class Phase12V015Tests(unittest.TestCase):
             )
             self.assertEqual(second["duplicate_count"], 1)
             self.assertEqual(second["duplicates"][0]["group_key"], "annul")
+        finally:
+            fixture.cleanup()
+
+    def test_add_vocabulary_no_lemma_no_duplicate(self) -> None:
+        """Without agent-provided lemma, no duplicate detection across forms."""
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            first = service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["doomed"],
+                source_sentence=FIXTURE_QUOTE,
+                compact=True,
+            )
+            self.assertEqual(first["saved_count"], 1)
+            # Without lemma, "doom" is NOT treated as duplicate of "doomed".
+            second = service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["doom"],
+                source_sentence=FIXTURE_QUOTE,
+                compact=True,
+            )
+            self.assertEqual(second["saved_count"], 1)
+            self.assertEqual(second["duplicate_count"], 0)
+        finally:
+            fixture.cleanup()
+
+    def test_edit_vocabulary_lemma_syncs_group_key(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            result = service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["doomed"],
+                source_sentence=FIXTURE_QUOTE,
+            )
+            note_id = result[0]["id"]
+            self.assertIsNone(result[0]["group_key"])
+            updated = service.edit_item(
+                entity_type="vocabulary",
+                item_id=note_id,
+                changes={"lemma": "doom"},
+            )
+            self.assertEqual(updated["lemma"], "doom")
+            self.assertEqual(updated["group_key"], "doom")
         finally:
             fixture.cleanup()
 
@@ -227,7 +268,7 @@ class Phase12V015Tests(unittest.TestCase):
             )
             self.assertEqual(version["value"], "4")
             self.assertEqual(note["normalized_form"], "weariness")
-            self.assertEqual(note["group_key"], "weariness")
+            self.assertIsNone(note["group_key"])
 
 
 if __name__ == "__main__":
