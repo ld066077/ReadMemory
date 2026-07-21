@@ -1,3 +1,18 @@
+# v 0.1.6
+
+## Summary
+
+Remove all rule-based lemmatization; the agent is now the sole authority on word grouping.
+
+## Implemented
+
+- `normalize_word` only lowercases and strips punctuation; no suffix rules.
+- `group_key` comes only from agent-provided `lemma`; `NULL` when absent.
+- Duplicate detection only when `lemma` is provided.
+- `edit_item` supports editing `lemma` on vocabulary and syncs `group_key`.
+- `get_vocabulary` ungrouped words fall back to the word itself.
+- Version bump to 0.1.6.
+
 # v 0.1.5
 
 ## Summary
