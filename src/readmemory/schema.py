@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 
 
-SCHEMA_VERSION = "5"
+SCHEMA_VERSION = "6"
 
 
 SCHEMA_STATEMENTS = [
@@ -89,6 +89,10 @@ SCHEMA_STATEMENTS = [
         source_sentence TEXT,
         user_meaning TEXT,
         ai_context_meaning TEXT,
+        meaning_zh TEXT,
+        pronunciation TEXT,
+        source_sentence_translation TEXT,
+        source_sentence_chunked TEXT,
         status TEXT NOT NULL DEFAULT 'new',
         next_review_at TEXT,
         note_date TEXT,
@@ -238,6 +242,17 @@ def _migrate_to_v5(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN lesson_generated_at TEXT")
 
 
+def _migrate_to_v6(conn: sqlite3.Connection) -> None:
+    if "meaning_zh" not in _columns(conn, "vocabulary_notes"):
+        conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN meaning_zh TEXT")
+    if "pronunciation" not in _columns(conn, "vocabulary_notes"):
+        conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN pronunciation TEXT")
+    if "source_sentence_translation" not in _columns(conn, "vocabulary_notes"):
+        conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN source_sentence_translation TEXT")
+    if "source_sentence_chunked" not in _columns(conn, "vocabulary_notes"):
+        conn.execute("ALTER TABLE vocabulary_notes ADD COLUMN source_sentence_chunked TEXT")
+
+
 def initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -247,6 +262,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         _migrate_to_v3(conn)
         _migrate_to_v4(conn)
         _migrate_to_v5(conn)
+        _migrate_to_v6(conn)
         conn.execute(
             "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
             ("schema_version", SCHEMA_VERSION),

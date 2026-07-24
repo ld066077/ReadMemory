@@ -1,3 +1,30 @@
+# v 0.2.0
+
+## Summary
+
+Card-style vocabulary review replaces the cloze-deletion quiz flow. The agent
+generates pronunciation, Chinese meaning, sentence translation, and chunked
+reading per word, then writes them back so reviews render as complete cards.
+
+## Implemented
+
+- `get_due_reviews` now returns a canonical `review_card` payload per item.
+  Vocabulary cards: `word`, `lemma`, `pronunciation`, `meaning_en`,
+  `meaning_zh`, `source_sentence`, `sentence_translation_zh`,
+  `chunked_sentence`, `needs_enrichment`.
+- Cloze-deletion `prompt` generation removed (legacy quiz flow deleted).
+- Schema v6: new `vocabulary_notes` columns `meaning_zh`, `pronunciation`,
+  `source_sentence_translation`, `source_sentence_chunked` (with migration).
+- `add_vocabulary` accepts per-word enrichment metadata (`pronunciation`,
+  `sentence_translation`, `sentence_chunked`) via `meanings=[...]`.
+- New `enrich_vocabulary` batch tool (service + MCP + CLI
+  `enrich-vocabulary`) for writing agent-generated enrichment back in one call.
+- `edit_item` on vocabulary supports the four new enrichment fields.
+- Auto source-sentence lookup falls back to a book-wide sentence search when
+  the anchor range is too narrow.
+- Chunking heuristic: ` / ` pause marks from existing marks, commas, or a
+  midpoint split for long sentences.
+
 # v 0.1.6
 
 ## Summary

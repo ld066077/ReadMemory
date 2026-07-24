@@ -126,9 +126,12 @@ def main(argv: list[str] | None = None) -> int:
     ) -> dict:
         """Save vocabulary words. Returns a compact summary by default.
 
-        For per-word metadata (lemma, meaning, meaning_zh, context), pass
+        For per-word metadata (lemma, meaning, meaning_zh, context,
+        pronunciation, sentence_translation, sentence_chunked), pass
         meanings as a list of dicts: [{"word": "...", "lemma": "...",
-        "meaning": "...", "meaning_zh": "...", "context": "..."}].
+        "meaning": "...", "meaning_zh": "...", "context": "...",
+        "pronunciation": "...", "sentence_translation": "...",
+        "sentence_chunked": "..."}].
         Lemma is used to group word families (e.g. "annulled" -> "annul").
         """
         return service.add_vocabulary(
@@ -254,6 +257,13 @@ def main(argv: list[str] | None = None) -> int:
             book_id=book_id, book_ref=book_ref,
             group_key=group_key, lesson_content=lesson_content,
         )
+
+    @app.tool()
+    def enrich_vocabulary(enrichments: list[dict]) -> dict:
+        """Batch-write agent-generated enrichment fields (pronunciation, meaning_zh,
+        source_sentence_translation, source_sentence_chunked) back to vocabulary notes.
+        Each entry: {item_id, ...fields}."""
+        return service.enrich_vocabulary(enrichments=enrichments)
 
     @app.tool()
     def record_review_result(review_item_id: str, result: str) -> dict:

@@ -13,7 +13,18 @@ class MaintenanceMixin:
             "session": ("reading_sessions", {"session_date", "user_note", "status"}),
             "vocabulary": (
                 "vocabulary_notes",
-                {"word", "lemma", "source_sentence", "user_meaning", "ai_context_meaning", "note_date"},
+                {
+                    "word",
+                    "lemma",
+                    "source_sentence",
+                    "user_meaning",
+                    "ai_context_meaning",
+                    "meaning_zh",
+                    "pronunciation",
+                    "source_sentence_translation",
+                    "source_sentence_chunked",
+                    "note_date",
+                },
             ),
             "sentence": (
                 "sentence_notes",

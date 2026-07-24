@@ -21,6 +21,7 @@ from .maintenance import MaintenanceMixin
 from .paths import ReadMemoryPaths
 from .repository import Repository, match_score, normalize_quote
 from .storage import Store
+import re
 
 
 class ReadMemoryService(MaintenanceMixin):
@@ -380,6 +381,71 @@ class ReadMemoryService(MaintenanceMixin):
                 return text
         return None
 
+    def _find_sentence_containing_word(self, *, book_id: str, word: str) -> str | None:
+        rows = self.store.fetchall(
+            """
+            SELECT text FROM source_units
+            WHERE book_id = ? AND unit_type = 'sentence'
+            ORDER BY chapter_index, paragraph_index, sentence_index
+            """,
+            (book_id,),
+        )
+        word_lower = word.lower()
+        for row in rows:
+            text = str(row.get("text") or "")
+            if word_lower in text.lower():
+                return text
+        return None
+
+    def enrich_vocabulary(
+        self,
+        *,
+        enrichments: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Batch-write agent-generated enrichment fields back to vocabulary notes.
+
+        Each entry: {item_id, pronunciation?, meaning_zh?,
+        source_sentence_translation?, source_sentence_chunked?}.
+        Only provided fields are updated; missing fields are left untouched.
+        """
+        allowed = {
+            "pronunciation",
+            "meaning_zh",
+            "source_sentence_translation",
+            "source_sentence_chunked",
+        }
+        updated: list[dict[str, Any]] = []
+        errors: list[str] = []
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        for entry in enrichments:
+            item_id = str(entry.get("item_id") or "").strip()
+            if not item_id:
+                errors.append("missing_item_id")
+                continue
+            current = self.store.fetchone(
+                "SELECT id FROM vocabulary_notes WHERE id = ?", (item_id,)
+            )
+            if not current:
+                errors.append(item_id)
+                continue
+            changes = {
+                key: str(value).strip()
+                for key, value in entry.items()
+                if key in allowed and value is not None and str(value).strip()
+            }
+            if not changes:
+                continue
+            assignments = ", ".join(f"{key} = ?" for key in changes)
+            params = list(changes.values()) + [now, item_id]
+            self.store.execute(
+                f"UPDATE vocabulary_notes SET {assignments}, updated_at = ? WHERE id = ?",
+                tuple(params),
+            )
+            updated.append(
+                self.store.fetchone("SELECT * FROM vocabulary_notes WHERE id = ?", (item_id,))
+            )
+        return {"updated_count": len(updated), "errors": errors, "items": updated}
+
     def add_vocabulary(
         self,
         *,
@@ -414,7 +480,15 @@ class ReadMemoryService(MaintenanceMixin):
                 meta_map[word_key] = {
                     key: str(value).strip()
                     for key, value in entry.items()
-                    if key in {"lemma", "meaning", "meaning_zh", "context"} and value
+                    if key in {
+                        "lemma",
+                        "meaning",
+                        "meaning_zh",
+                        "context",
+                        "pronunciation",
+                        "sentence_translation",
+                        "sentence_chunked",
+                    } and value
                 }
 
         created: list[dict[str, Any]] = []
@@ -458,6 +532,9 @@ class ReadMemoryService(MaintenanceMixin):
             final_user_meaning = per_word.get("meaning") or user_meaning
             final_ai_meaning = per_word.get("context") or ai_context_meaning
             final_zh = per_word.get("meaning_zh")
+            final_pronunciation = per_word.get("pronunciation")
+            final_sentence_translation = per_word.get("sentence_translation")
+            final_sentence_chunked = per_word.get("sentence_chunked")
             # Auto-resolve source_sentence from reading range when anchor is given.
             final_source = source_sentence
             if not final_source and resolved_anchor_id:
@@ -466,23 +543,43 @@ class ReadMemoryService(MaintenanceMixin):
                     word=word,
                     anchor_id=resolved_anchor_id,
                 )
-            if final_source or final_user_meaning or final_ai_meaning or final_zh:
+                if not final_source:
+                    final_source = self._find_sentence_containing_word(
+                        book_id=resolved_book_id,
+                        word=word,
+                    )
+            if (
+                final_source
+                or final_user_meaning
+                or final_ai_meaning
+                or final_zh
+                or final_pronunciation
+                or final_sentence_translation
+                or final_sentence_chunked
+            ):
                 self.store.execute(
                     """
                     UPDATE vocabulary_notes
-                    SET source_sentence = ?, user_meaning = ?, ai_context_meaning = ?, updated_at = ?
+                    SET source_sentence = ?, user_meaning = ?, ai_context_meaning = ?, meaning_zh = ?,
+                        pronunciation = ?, source_sentence_translation = ?, source_sentence_chunked = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (final_source, final_user_meaning, final_ai_meaning, now, note["id"]),
+                    (
+                        final_source,
+                        final_user_meaning,
+                        final_ai_meaning,
+                        final_zh,
+                        final_pronunciation,
+                        final_sentence_translation,
+                        final_sentence_chunked,
+                        now,
+                        note["id"],
+                    ),
                 )
-            if final_zh:
-                # Store Chinese meaning in user_meaning if empty, else append.
-                current = self.store.fetchone("SELECT user_meaning FROM vocabulary_notes WHERE id = ?", (note["id"],))
-                existing_zh = (current or {}).get("user_meaning") or ""
-                combined = f"{existing_zh} | {final_zh}" if existing_zh else final_zh
+            if final_zh and not final_user_meaning:
                 self.store.execute(
                     "UPDATE vocabulary_notes SET user_meaning = ? WHERE id = ?",
-                    (combined, note["id"]),
+                    (final_zh, note["id"]),
                 )
             self.repo.create_review_item(
                 book_id=resolved_book_id,
@@ -652,6 +749,10 @@ class ReadMemoryService(MaintenanceMixin):
                 COALESCE(v.anchor_id, s.anchor_id, t.anchor_id) AS anchor_id,
                 v.group_key AS group_key,
                 v.lemma AS lemma,
+                v.meaning_zh AS meaning_zh,
+                v.pronunciation AS pronunciation,
+                v.source_sentence_translation AS source_sentence_translation,
+                v.source_sentence_chunked AS source_sentence_chunked,
                 v.lesson_content AS lesson_content,
                 v.lesson_generated_at AS lesson_generated_at
             FROM review_items r
@@ -665,25 +766,55 @@ class ReadMemoryService(MaintenanceMixin):
             params,
         )
 
-    def _review_prompt(self, row: dict[str, Any]) -> str:
-        """Build a cloze-deletion review prompt for a review item."""
-        item_type = row.get("item_type")
+    def _guess_chunked_sentence(self, sentence: str) -> str | None:
+        text = sentence.strip()
+        if not text:
+            return None
+        if " / " in text:
+            return text
+        if ", " in text:
+            return text.replace(", ", " / ")
+        words = text.split()
+        if len(words) >= 8:
+            midpoint = len(words) // 2
+            return " ".join(words[:midpoint]) + " / " + " ".join(words[midpoint:])
+        return text
+
+    def _review_card(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Build a display-friendly review card, primarily for vocabulary."""
+        item_type = row.get("item_type") or ""
         title = row.get("title") or ""
         context = row.get("context") or ""
-        book_title = row.get("book_title") or "the book"
-        if item_type == "vocabulary":
-            if context:
-                # Create cloze: replace the word (case-insensitive) with ______
-                import re
-                pattern = re.compile(re.escape(title), re.IGNORECASE)
-                cloze = pattern.sub("______", context, count=1)
-                return f'"{cloze}"\n— {book_title}'
-            return f'What does "{title}" mean in "{book_title}"?'
-        if item_type == "sentence":
-            return f'Recall this sentence from "{book_title}": "{title[:80]}..." — can you say it or explain it?'
-        if item_type == "thought":
-            return f'What was your thought about "{context[:60] if context else title[:60]}" in "{book_title}"?'
-        return f'Review: "{title[:80]}" from "{book_title}"'
+        book_title = row.get("book_title") or ""
+        card: dict[str, Any] = {
+            "type": item_type,
+            "title": title,
+            "book_title": book_title,
+        }
+        if item_type != "vocabulary":
+            card["text"] = title or context
+            return card
+
+        source_sentence = context or None
+        card.update(
+            {
+                "word": title,
+                "lemma": row.get("lemma"),
+                "pronunciation": row.get("pronunciation"),
+                "meaning_en": row.get("ai_context_meaning") or row.get("user_meaning"),
+                "meaning_zh": row.get("meaning_zh") or row.get("user_meaning"),
+                "source_sentence": source_sentence,
+                "sentence_translation_zh": row.get("source_sentence_translation"),
+                "chunked_sentence": row.get("source_sentence_chunked")
+                or (self._guess_chunked_sentence(source_sentence) if source_sentence else None),
+                "needs_enrichment": not bool(
+                    row.get("pronunciation")
+                    and (row.get("meaning_zh") or row.get("user_meaning"))
+                    and row.get("source_sentence_translation")
+                ),
+            }
+        )
+        return card
 
     def get_due_reviews(
         self,
@@ -711,7 +842,7 @@ class ReadMemoryService(MaintenanceMixin):
             params.append(target)
         rows = self._review_rows(where=" AND ".join(clauses) or "1 = 1", params=tuple(params))
         for row in rows:
-            row["prompt"] = self._review_prompt(row)
+            row["review_card"] = self._review_card(row)
             # Build lesson placeholder for vocabulary items without one.
             if row.get("item_type") == "vocabulary" and not row.get("lesson_content"):
                 row["lesson"] = None

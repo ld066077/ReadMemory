@@ -133,6 +133,33 @@ class Phase12V015Tests(unittest.TestCase):
         finally:
             fixture.cleanup()
 
+    def test_edit_vocabulary_enrichment_fields(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            result = service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["margin"],
+                source_sentence=FIXTURE_QUOTE,
+            )
+            note_id = result[0]["id"]
+            updated = service.edit_item(
+                entity_type="vocabulary",
+                item_id=note_id,
+                changes={
+                    "pronunciation": "/ˈmɑːdʒɪn/",
+                    "meaning_zh": "边缘；空白处",
+                    "source_sentence_translation": "空白处记得每一个谨慎的句子。",
+                    "source_sentence_chunked": "The margin / remembers every careful sentence.",
+                },
+            )
+            self.assertEqual(updated["pronunciation"], "/ˈmɑːdʒɪn/")
+            self.assertEqual(updated["meaning_zh"], "边缘；空白处")
+            self.assertEqual(updated["source_sentence_translation"], "空白处记得每一个谨慎的句子。")
+            self.assertEqual(updated["source_sentence_chunked"], "The margin / remembers every careful sentence.")
+        finally:
+            fixture.cleanup()
+
     def test_get_reading_position(self) -> None:
         fixture = ImportedFixture()
         try:
@@ -204,16 +231,90 @@ class Phase12V015Tests(unittest.TestCase):
         finally:
             fixture.cleanup()
 
-    def test_get_due_reviews_has_prompt(self) -> None:
+    def test_enrich_vocabulary_batch(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            saved = service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["margin", "careful"],
+                source_sentence=FIXTURE_QUOTE,
+            )
+            ids = {row["word"]: row["id"] for row in saved}
+            outcome = service.enrich_vocabulary(
+                enrichments=[
+                    {
+                        "item_id": ids["margin"],
+                        "pronunciation": "/ˈmɑːdʒɪn/",
+                        "meaning_zh": "边缘",
+                        "source_sentence_translation": "空白处记得每一个谨慎的句子。",
+                        "source_sentence_chunked": "The margin / remembers every careful sentence.",
+                    },
+                    {
+                        "item_id": ids["careful"],
+                        "meaning_zh": "谨慎的",
+                    },
+                    {"item_id": "fake_id", "meaning_zh": "x"},
+                ]
+            )
+            self.assertEqual(outcome["updated_count"], 2)
+            self.assertEqual(outcome["errors"], ["fake_id"])
+            reviews = service.get_due_reviews(book_id=fixture.book_id, mode="all")
+            cards = {r["review_card"]["word"]: r["review_card"] for r in reviews}
+            self.assertEqual(cards["margin"]["pronunciation"], "/ˈmɑːdʒɪn/")
+            self.assertEqual(cards["margin"]["sentence_translation_zh"], "空白处记得每一个谨慎的句子。")
+            self.assertFalse(cards["margin"]["needs_enrichment"])
+            # careful: only meaning_zh filled, still missing pronunciation/translation
+            self.assertEqual(cards["careful"]["meaning_zh"], "谨慎的")
+            self.assertTrue(cards["careful"]["needs_enrichment"])
+        finally:
+            fixture.cleanup()
+
+    def test_get_due_reviews_has_review_card(self) -> None:
+        fixture = ImportedFixture()
+        try:
+            service = fixture.service
+            service.add_vocabulary(
+                book_id=fixture.book_id,
+                words=["margin"],
+                source_sentence=FIXTURE_QUOTE,
+                meanings=[
+                    {
+                        "word": "margin",
+                        "lemma": "margin",
+                        "meaning": "the edge or border of something",
+                        "meaning_zh": "边缘；空白处",
+                        "pronunciation": "/ˈmɑːdʒɪn/",
+                        "sentence_translation": "空白处记得每一个谨慎的句子。",
+                        "sentence_chunked": "The margin / remembers every careful sentence.",
+                    }
+                ],
+            )
+            reviews = service.get_due_reviews(book_id=fixture.book_id, mode="all")
+            self.assertGreater(len(reviews), 0)
+            card = reviews[0]["review_card"]
+            self.assertEqual(card["word"], "margin")
+            self.assertEqual(card["lemma"], "margin")
+            self.assertEqual(card["pronunciation"], "/ˈmɑːdʒɪn/")
+            self.assertEqual(card["meaning_zh"], "边缘；空白处")
+            self.assertEqual(card["source_sentence"], FIXTURE_QUOTE)
+            self.assertEqual(card["sentence_translation_zh"], "空白处记得每一个谨慎的句子。")
+            self.assertEqual(card["chunked_sentence"], "The margin / remembers every careful sentence.")
+            self.assertFalse(card["needs_enrichment"])
+        finally:
+            fixture.cleanup()
+
+    def test_get_due_reviews_review_card_guesses_chunking(self) -> None:
         fixture = ImportedFixture()
         try:
             service = fixture.service
             service.add_vocabulary(book_id=fixture.book_id, words=["margin"], source_sentence=FIXTURE_QUOTE)
             reviews = service.get_due_reviews(book_id=fixture.book_id, mode="all")
-            self.assertGreater(len(reviews), 0)
-            self.assertIn("prompt", reviews[0])
-            # Cloze format: word replaced with ______
-            self.assertIn("______", reviews[0]["prompt"])
+            card = reviews[0]["review_card"]
+            self.assertEqual(card["word"], "margin")
+            self.assertEqual(card["source_sentence"], FIXTURE_QUOTE)
+            self.assertEqual(card["chunked_sentence"], "The margin remembers every careful sentence.")
+            self.assertTrue(card["needs_enrichment"])
         finally:
             fixture.cleanup()
 
@@ -341,11 +442,15 @@ class Phase12V015Tests(unittest.TestCase):
             store = Store(db_path)
             store.initialize()
             version = store.fetchone("SELECT value FROM schema_meta WHERE key = 'schema_version'")
-            self.assertEqual(version["value"], "5")
+            self.assertEqual(version["value"], "6")
             # Check new columns exist.
             cols = {row[1] for row in store.connect().execute("PRAGMA table_info(vocabulary_notes)")}
             self.assertIn("lesson_content", cols)
             self.assertIn("lesson_generated_at", cols)
+            self.assertIn("meaning_zh", cols)
+            self.assertIn("pronunciation", cols)
+            self.assertIn("source_sentence_translation", cols)
+            self.assertIn("source_sentence_chunked", cols)
 
     def test_find_sentence_in_range_with_anchor(self) -> None:
         fixture = ImportedFixture()

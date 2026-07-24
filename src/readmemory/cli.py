@@ -161,6 +161,9 @@ def build_parser() -> ArgumentParser:
 
     batch_review = subparsers.add_parser("batch-review", help="record multiple review results from JSON")
     batch_review.add_argument("--json-input", required=True, help="JSON list of {review_item_id, result}")
+
+    enrich = subparsers.add_parser("enrich-vocabulary", help="batch-write enrichment fields from JSON")
+    enrich.add_argument("--json-input", required=True, help="JSON list of {item_id, pronunciation?, meaning_zh?, source_sentence_translation?, source_sentence_chunked?}")
     return parser
 
 
@@ -378,6 +381,13 @@ def _main(argv: list[str] | None = None) -> int:
         import json as _json
         results = _json.loads(args.json_input)
         result = _make_service(args.config).batch_record_review_results(results=results)
+        _print(result, as_json=args.json_output)
+        return 0
+
+    if args.command == "enrich-vocabulary":
+        import json as _json
+        enrichments = _json.loads(args.json_input)
+        result = _make_service(args.config).enrich_vocabulary(enrichments=enrichments)
         _print(result, as_json=args.json_output)
         return 0
 
