@@ -115,6 +115,17 @@ thoughts:
    book, save it anyway and say no source anchor was attached.
 5. Do not silently drop any user-provided meaning, sentence, tags, or examples.
 
+Pitfall (vocab source sentences): with `anchor_id` set and no explicit
+`source_sentence`, `_find_sentence_in_range` returns the FIRST sentence in
+reading order containing the word — for words seen in earlier chapters
+(e.g. "melancholy" in ch10) that is the wrong context for today's reading.
+Instead, group words by their actual source sentence and call
+`add_vocabulary` once per sentence with explicit `source_sentence` +
+`anchor_id`, and full per-word enrichment (lemma, meaning, meaning_zh,
+context, pronunciation, sentence_translation, sentence_chunked). Per-word
+`context` maps to `ai_context_meaning` (contextual gloss), not the source
+sentence. Locate each word's sentence first with `search_source`.
+
 When the user specifies a reading date, pass the same value as `note_date` so
 notes and reading sessions appear in the same daily log.
 
