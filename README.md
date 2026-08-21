@@ -4,6 +4,61 @@ ReadMemory is a local source-of-truth layer for English reading notes used throu
 
 Hermes agent should use ReadMemory through the `readmemory` MCP server and the ReadMemory skill for Hermes agent. Hermes agent memory is not the factual store.
 
+## Two Training Modes
+
+ReadMemory is designed around two complementary training modes: **book
+shadowing** and **podcast shadowing**. They train different skills and one
+cannot replace the other.
+
+### Book Shadowing — reading training
+
+Book shadowing is reading training, not speaking training. Reading a sentence
+aloud trains three things:
+
+1. **Pronunciation muscle.** Written and academic vocabulary (e.g.
+   *philosophical*, *lyrical*, *lucidity*) rarely appears in conversation, so
+   it never gets spoken practice otherwise. Without reading aloud, these words
+   stay in the "recognizable but not pronounceable" state.
+2. **Long-sentence parsing.** Reading aloud forces you to break a complex
+   sentence into its components. Structural gaps that silent reading glosses
+   over are exposed the moment you try to say the sentence.
+3. **Attention anchor.** Shadowing sustains deep-reading focus — the kind
+   where a single dense paragraph takes 45 minutes. Remove it and reading
+   intensity drops.
+
+What book shadowing does not train: the rhythm of real conversation, because
+nobody speaks in written prose. A TTS reader (e.g. ElevenReader) is acceptable
+for book shadowing because the goal there is reading, not imitating a voice.
+
+Material selection: choose books slightly above your comfortable level. If the
+material is too easy, none of the three effects engage; slightly complex
+material is what forces pronunciation, parsing, and attention to work.
+
+### Podcast Shadowing — speaking training
+
+Podcast shadowing trains what books cannot: the rhythm of real spoken English —
+weak forms ("gonna", "wanna"), linking, sudden speed changes, mid-sentence
+restarts, interruptions.
+
+Rules:
+
+- **Shadow the real human audio, never TTS.** TTS has uniform speed, fully
+  pronounced words, and templated intonation — even less human than a
+  conversational AI. Importing text into a TTS reader for speaking practice
+  defeats the purpose.
+- **Use the transcript as support, not as the source.** Prefer podcasts that
+  publish transcripts. Read along for the first few passes, then shadow from
+  audio only, then retell the segment yourself.
+- **Work in 30–60 second loops**, not whole episodes. Master one segment
+  before moving on.
+- **Difficulty progression:** clear monologue (e.g. *Philosophize This!*) →
+  slow, clear interviews (*On Being*, *Lex Fridman Podcast*) → real two-person
+  conversation with banter (*Very Bad Wizards*).
+
+ReadMemory's data model today is book-centric (EPUB import, source anchors,
+vocabulary/sentence/thought notes). Podcast mode is the design direction: the
+same capture-and-review loop applied to spoken material.
+
 ## What It Does
 
 ReadMemory helps you keep reading in your existing EPUB reader while Hermes
