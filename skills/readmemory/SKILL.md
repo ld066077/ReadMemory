@@ -140,6 +140,11 @@ When the user asks what to review, what is due, or wants to start review:
    of `correct`, `wrong`, or `uncertain`.
 4. Map informal wording conservatively: remembered = `correct`, forgot =
    `wrong`, shaky/not sure = `uncertain`.
+5. Pitfall: `record_review_result.review_item_id` expects the review QUEUE row
+   id (`review_*` from `get_due_reviews[].id`), NOT the vocab/sentence item id
+   (`vocab_*`/`sentence_*`) — passing the item id fails with a bare quoted-id
+   error. For multi-item sessions prefer one CLI fallback:
+   `readmemory --json batch-review --json-input '[{"review_item_id":"review_...","result":"correct"},...]'`.
 
 ### Daily Log Or Export
 
